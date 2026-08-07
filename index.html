@@ -52,7 +52,7 @@ body{
   padding:20px 12px 16px;text-align:center;
 }
 .plate .km{
-  font-size:clamp(60px,21vw,110px);font-weight:800;line-height:.92;letter-spacing:-.02em;
+  font-size:clamp(38px,13vw,68px);font-weight:800;line-height:.92;letter-spacing:-.02em;
 }
 .plate .km .m{font-size:.5em;font-weight:700;opacity:.9}
 .plate .km .k{font-size:.5em;font-weight:700}
@@ -71,7 +71,7 @@ body{
 }
 .row.sa{background:var(--rest-blue)}
 .row.next{box-shadow:inset 0 0 0 2px var(--alert)}
-.row .nm{font-size:26px;font-weight:800;line-height:1.15}
+.row .nm{font-size:34px;font-weight:800;line-height:1.15}
 .row.sys .nm{color:var(--sys-red)}
 .row .sub{font-size:11px;color:rgba(242,245,241,.7);margin-top:2px;
   overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:46vw}
@@ -104,10 +104,10 @@ body{
   .spd b{font-size:19px}.spd span{font-size:8px}
   .plate{padding:8px 8px 6px;border-radius:7px;
     box-shadow:inset 0 0 0 2px var(--face),inset 0 0 0 6px var(--sign-green)}
-  .plate .km{font-size:clamp(38px,13vh,60px)}
+  .plate .km{font-size:clamp(26px,9vh,42px)}
   .plate .road{margin-top:3px;font-size:9px;letter-spacing:.2em}
   .row{padding:7px 10px;gap:8px}
-  .row .nm{font-size:20px}
+  .row .nm{font-size:25px}
   .row .sub{display:none}
   .row .d b{font-size:20px}
   .row .d em{margin-top:2px;font-size:9px}
@@ -335,8 +335,8 @@ function drawPip(){
   let metres = Math.round((fix.km - whole) * 10) * 100;
   let w = whole; if(metres === 1000){ w++; metres = 0; }
   g.fillStyle = '#F2F5F1'; g.textAlign = 'center';
-  g.font = '800 50px system-ui,"Helvetica Neue",sans-serif';
-  g.fillText(`${String(w).padStart(3,'0')}K+${String(metres).padStart(3,'0')}`, 160, 66);
+  g.font = '800 38px system-ui,"Helvetica Neue",sans-serif';
+  g.fillText(`${String(w).padStart(3,'0')}K+${String(metres).padStart(3,'0')}`, 160, 62);
   g.font = '700 12px system-ui,"PingFang TC","Noto Sans TC",sans-serif';
   g.textAlign = 'left';
   g.fillText(`${r.short} ${dir === 0 ? '' : (dir > 0 ? r.fwd : r.rev)}`, 20, 30);
@@ -351,8 +351,8 @@ function drawPip(){
     g.fillStyle = sa ? '#1565C0' : '#00593C'; box(g, 6, 98, 308, 76, 8); g.fill();
     g.strokeStyle = 'rgba(242,245,241,.85)'; g.lineWidth = 2; box(g, 8, 100, 304, 72, 6); g.stroke();
     g.fillStyle = isSys(next.n) ? '#FF5A5A' : '#F2F5F1'; g.textAlign = 'left';
-    g.font = '800 25px system-ui,"PingFang TC","Noto Sans TC",sans-serif';
-    g.fillText(next.n, 20, 134);
+    g.font = '800 30px system-ui,"PingFang TC","Noto Sans TC",sans-serif';
+    g.fillText(next.n, 20, 130);
     const d = Math.max(next.d, 0);
     g.textAlign = 'right';
     g.fillStyle = d < 1.5 ? '#F2C230' : '#F2F5F1';
