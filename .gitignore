@@ -1,0 +1,2 @@
+# 本機測試產物；正式版由 GitHub Actions 寫到 events-data 分支
+events.json

@@ -1,0 +1,36 @@
+name: 更新國道路況事件
+
+on:
+  schedule:
+    - cron: '*/5 * * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: events
+  cancel-in-progress: true
+
+jobs:
+  fetch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: 抓取並轉檔
+        run: python scripts/fetch_events.py
+      - name: 推到 events-data 分支（單一 commit，不觸發 Pages 重建）
+        run: |
+          mkdir -p "$RUNNER_TEMP/data"
+          cp events.json "$RUNNER_TEMP/data/"
+          cd "$RUNNER_TEMP/data"
+          git init -q -b events-data
+          git add events.json
+          git -c user.name=events-bot -c user.email=actions@users.noreply.github.com \
+              commit -q -m "update $(date -u +%FT%TZ)"
+          git push -q --force \
+              "https://x-access-token:${{ github.token }}@github.com/${{ github.repository }}" \
+              events-data:events-data

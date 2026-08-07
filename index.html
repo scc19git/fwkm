@@ -62,9 +62,12 @@ body{
 .plate.idle{background:var(--night-2);box-shadow:inset 0 0 0 2px var(--rule)}
 .plate.idle .km{font-size:clamp(20px,6vw,30px);font-weight:600;line-height:1.5;color:var(--dim)}
 
-/* ---- 前方設施清單 ---- */
-.list{flex:1;display:flex;flex-direction:column;gap:8px;overflow:hidden}
+/* ---- 前方設施清單：可捲動，看得到全部後續設施 ---- */
+.list{flex:1;display:flex;flex-direction:column;gap:8px;
+  overflow-y:auto;overflow-x:hidden;-webkit-overflow-scrolling:touch;scrollbar-width:none}
+.list::-webkit-scrollbar{display:none}
 .row{
+  flex:none;
   background:var(--sign-green);border-radius:8px;
   box-shadow:inset 0 0 0 2px rgba(242,245,241,.85);
   padding:11px 14px;display:flex;align-items:center;gap:12px;
@@ -81,8 +84,13 @@ body{
 .row .d i{font-size:11px;font-style:normal;font-weight:600;opacity:.75}
 .row .d em{display:block;font-size:10px;font-style:normal;color:rgba(242,245,241,.65);margin-top:4px}
 
-/* ---- 測速照相警示列 ---- */
-.row.cam{background:#7A1024}
+/* ---- 即時路況事件列 ---- */
+.row.ev{background:#7A5200}
+.row.ev.red{background:#8F1D1D}
+.row.ev .sub{font-size:13px}
+
+/* ---- 測速照相警示列：釘在捲動清單頂端 ---- */
+.row.cam{background:#7A1024;position:sticky;top:0;z-index:2}
 .row.cam.over{animation:camflash 1s steps(2) infinite}
 @keyframes camflash{50%{background:#C51F2E}}
 .lim{
@@ -122,11 +130,9 @@ body{
   .row .d b{font-size:20px}
   .row .d em{margin-top:2px;font-size:9px}
   .lim{width:34px;height:34px;border-width:4px;font-size:14px}
-  .row:nth-child(n+3){display:none}          /* 只留最近兩個設施 */
 }
 @media (max-height:360px){
   .plate .road,.spd{display:none}
-  .row:nth-child(n+2){display:none}          /* 只留下一個交流道 */
 }
 .sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0)}
 
@@ -149,7 +155,7 @@ body{
 
 <div class="start" id="start">
   <h1>國道里程</h1>
-  <p>顯示目前所在的國道樁號，前方的交流道、服務區距離，以及固定式測速照相警示。<br>國道 1、2、3、3甲、4、5、6、8、10 號及汐五高架，資料離線內建。<br>行駛中請固定於支架上。</p>
+  <p>顯示目前所在的國道樁號，前方的交流道、服務區距離、固定式測速照相警示，以及警廣即時路況（事故、故障車、散落物等，需網路）。<br>國道 1、2、3、3甲、4、5、6、8、10 號及汐五高架，資料離線內建。<br>行駛中請固定於支架上。</p>
   <button id="go">開始定位</button>
   <p id="err" style="color:var(--alert)"></p>
 </div>
@@ -263,6 +269,40 @@ function updateDir(road, km){
 const isSA = n => /服務區|休息站|休息區/.test(n);
 const isSys = n => /系統/.test(n);
 
+/* ---- 即時路況事件（警廣資料，GitHub Actions 每 5 分鐘轉存到 events-data 分支） ---- */
+const EV_URL = 'https://raw.githubusercontent.com/scc19git/fwkm/events-data/events.json';
+let EV = null;
+async function fetchEvents(){
+  for(const u of [EV_URL, 'events.json']){
+    try{
+      const r = await fetch(`${u}?t=${Date.now()}`, {cache:'no-store'});
+      if(r.ok){ EV = await r.json(); return; }
+    }catch(e){}
+  }
+}
+fetchEvents(); setInterval(fetchEvents, 120000);
+
+/* 事件定位：樁號 → comment 內的設施名稱 → 座標（座標常缺漏、缺漏時會指到
+   國道起點，所以起點附近的座標解不採用） */
+function evKm(e, road){
+  if(e.k1 != null) return [e.k1, e.k2 == null ? e.k1 : e.k2];
+  const hits = [];
+  for(const f of R[road].fac){
+    const cands = [f.n];
+    if(f.n.endsWith('交流道')) cands.push(f.n.slice(0, -3));
+    if(cands.some(c => c.length >= 2 && e.c.includes(c))) hits.push(f.k);
+  }
+  if(hits.length) return [Math.min(...hits), Math.max(...hits)];
+  if(e.lat != null){
+    const c = nearestOn(road, e.lat, e.lon);
+    if(c && c.d < 1200){
+      const km = R[road].markers[c.i][0];
+      if(km > 1.5) return [km, km];
+    }
+  }
+  return null;
+}
+
 function fmtKm(km){
   const whole = Math.floor(km);
   const metres = Math.round((km - whole) * 1000 / 100) * 100;
@@ -295,8 +335,7 @@ function render(fix, speed, acc){
   const ahead = dir === 0 ? [] : r.fac
     .map(f => ({...f, d: (f.k - fix.km) * dir}))
     .filter(f => f.d > -0.3)
-    .sort((a,b) => a.d - b.d)
-    .slice(0, 4);
+    .sort((a,b) => a.d - b.d);
 
   /* 前方 10 公里內、拍我這個行向的最近一支測速照相 */
   let cam = null;
@@ -314,7 +353,33 @@ function render(fix, speed, acc){
       <div class="d"><b class="${cam.d < 1.5 ? 'near' : ''}">${Math.max(cam.d, 0).toFixed(1)}</b><i> km</i></div>
     </div>` : '';
 
-  $('list').innerHTML = camHtml + (ahead.length ? ahead.map((f,idx) => {
+  /* 前方 20 公里內的路況事件，最多兩則；資料超過 30 分鐘沒更新就不顯示 */
+  let evs = [];
+  if(dir !== 0 && EV && Date.now() / 1000 - EV.updated < 1800){
+    for(const e of EV.ev){
+      if(e.r !== fix.road || (e.d !== 0 && e.d !== dir)) continue;
+      const kk = evKm(e, fix.road);
+      if(!kk) continue;
+      const dA = (kk[0] - fix.km) * dir, dB = (kk[1] - fix.km) * dir;
+      const lo = Math.min(dA, dB), hi = Math.max(dA, dB);
+      const d = (lo <= 0 && hi >= -0.3) ? 0 : lo;
+      if(d < 0 || d > 20) continue;
+      evs.push({t: e.t, c: e.c, d, ts: e.ts});
+    }
+    evs.sort((a,b) => a.d - b.d);
+    evs = evs.slice(0, 2);
+  }
+  const evHtml = evs.map(e => {
+    const age = Math.max(0, Math.round((Date.now() / 1000 - e.ts) / 60));
+    const ageTxt = age < 60 ? `${age} 分前` : age < 1440 ? `${Math.round(age / 60)} 時前` : '1 天前';
+    return `<div class="row ev${e.t === '事故' ? ' red' : ''}">
+      <div><div class="nm">${e.t}</div><div class="sub">${e.c}</div></div>
+      <div class="d"><b class="${e.d < 1.5 ? 'near' : ''}">${e.d < 10 ? e.d.toFixed(1) : Math.round(e.d)}</b><i> km</i><em>${ageTxt}</em></div>
+    </div>`;
+  }).join('');
+
+  const listEl = $('list'), keepScroll = listEl.scrollTop;   // 定位更新別把使用者捲的位置拉回去
+  listEl.innerHTML = camHtml + evHtml + (ahead.length ? ahead.map((f,idx) => {
     const d = Math.max(f.d, 0);
     const eta = (speed && speed > 4) ? Math.round(d*1000/speed/60) : null;
     return `<div class="row ${isSA(f.n)?'sa':''} ${isSys(f.n)?'sys':''} ${idx===0?'next':''}">
@@ -324,6 +389,7 @@ function render(fix, speed, acc){
     </div>`;
   }).join('') : `<div class="row" style="background:var(--night-2);box-shadow:inset 0 0 0 1px var(--rule)">
       <div class="nm" style="font-weight:600;color:var(--dim)">${dir===0?'請往前行駛以判定方向':'前方已無設施'}</div></div>`);
+  listEl.scrollTop = keepScroll;
 
   $('dot').className = 'dot ' + (acc == null ? '' : acc < 25 ? 'ok' : 'warn');
   $('acc').textContent = (acc == null ? '' : `±${Math.round(acc)}m`) +
