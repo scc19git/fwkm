@@ -13,6 +13,8 @@
   --sign-green-lo:#003D29;
   --sign-blue:#0F4C81;       /* 服務設施牌藍 */
   --sign-blue-lo:#0A3459;
+  --rest-blue:#1565C0;       /* 休息區／服務區列底色，刻意亮於交流道綠 */
+  --sys-red:#FF5A5A;         /* 系統交流道名稱紅字 */
   --face:#F2F5F1;            /* 牌面白 */
   --night:#0B100D;           /* 夜間底色 */
   --night-2:#141B16;
@@ -67,9 +69,10 @@ body{
   box-shadow:inset 0 0 0 2px rgba(242,245,241,.85);
   padding:11px 14px;display:flex;align-items:center;gap:12px;
 }
-.row.sa{background:var(--sign-blue)}
+.row.sa{background:var(--rest-blue)}
 .row.next{box-shadow:inset 0 0 0 2px var(--alert)}
-.row .nm{font-size:19px;font-weight:700;line-height:1.15}
+.row .nm{font-size:26px;font-weight:800;line-height:1.15}
+.row.sys .nm{color:var(--sys-red)}
 .row .sub{font-size:11px;color:rgba(242,245,241,.7);margin-top:2px;
   overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:46vw}
 .row .d{margin-left:auto;text-align:right;line-height:1}
@@ -104,7 +107,7 @@ body{
   .plate .km{font-size:clamp(38px,13vh,60px)}
   .plate .road{margin-top:3px;font-size:9px;letter-spacing:.2em}
   .row{padding:7px 10px;gap:8px}
-  .row .nm{font-size:15px}
+  .row .nm{font-size:20px}
   .row .sub{display:none}
   .row .d b{font-size:20px}
   .row .d em{margin-top:2px;font-size:9px}
@@ -244,7 +247,8 @@ function updateDir(road, km){
   }
 }
 
-const isSA = n => /服務區|休息站/.test(n);
+const isSA = n => /服務區|休息站|休息區/.test(n);
+const isSys = n => /系統/.test(n);
 
 function fmtKm(km){
   const whole = Math.floor(km);
@@ -284,7 +288,7 @@ function render(fix, speed, acc){
   $('list').innerHTML = ahead.length ? ahead.map((f,idx) => {
     const d = Math.max(f.d, 0);
     const eta = (speed && speed > 4) ? Math.round(d*1000/speed/60) : null;
-    return `<div class="row ${isSA(f.n)?'sa':''} ${idx===0?'next':''}">
+    return `<div class="row ${isSA(f.n)?'sa':''} ${isSys(f.n)?'sys':''} ${idx===0?'next':''}">
       <div><div class="nm">${f.n}</div>${f.s?`<div class="sub">${f.s}</div>`:''}</div>
       <div class="d"><b class="${d<1.5?'near':''}">${d<10?d.toFixed(1):Math.round(d)}</b><i> km</i>
         ${eta!==null?`<em>約 ${eta} 分</em>`:''}</div>
@@ -343,12 +347,12 @@ function drawPip(){
 
   /* 下一個設施 */
   if(next){
-    const sa = /服務區|休息站/.test(next.n);
-    g.fillStyle = sa ? '#0F4C81' : '#00593C'; box(g, 6, 98, 308, 76, 8); g.fill();
+    const sa = isSA(next.n);
+    g.fillStyle = sa ? '#1565C0' : '#00593C'; box(g, 6, 98, 308, 76, 8); g.fill();
     g.strokeStyle = 'rgba(242,245,241,.85)'; g.lineWidth = 2; box(g, 8, 100, 304, 72, 6); g.stroke();
-    g.fillStyle = '#F2F5F1'; g.textAlign = 'left';
-    g.font = '700 21px system-ui,"PingFang TC","Noto Sans TC",sans-serif';
-    g.fillText(next.n, 20, 132);
+    g.fillStyle = isSys(next.n) ? '#FF5A5A' : '#F2F5F1'; g.textAlign = 'left';
+    g.font = '800 25px system-ui,"PingFang TC","Noto Sans TC",sans-serif';
+    g.fillText(next.n, 20, 134);
     const d = Math.max(next.d, 0);
     g.textAlign = 'right';
     g.fillStyle = d < 1.5 ? '#F2C230' : '#F2F5F1';
