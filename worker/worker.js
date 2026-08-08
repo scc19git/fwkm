@@ -1,82 +1,68 @@
-/* Cloudflare Worker：即時轉發警廣國道路況（取代 GitHub Actions 的 5~60 分鐘延遲）
-   邏輯與 scripts/fetch_events.py 相同；輸出格式一致，app 換網址即可。
-   邊緣快取 60 秒——路上再多人用，警廣那邊每分鐘也只會被打一次。 */
+/* Cloudflare Worker：即時轉發高公局 1968 事件（每分鐘更新、只含現行有效事件）
+   上游：tisvcloud.freeway.gov.tw（警廣 PBS 會擋雲端機房連線，已棄用）
+   邏輯與 scripts/fetch_events.py 相同；60 秒邊緣快取。 */
 
-const URL_PBS = 'https://rtr.pbs.gov.tw/NMP103_PbsWS/resources/roadData/opendata';
+const URL_1968 = 'https://tisvcloud.freeway.gov.tw/history/1min_incident_data_1968.xml';
 
-// 10 要排在 1 前面、3甲在 3 前面
-const ROADS = [
-  ['國道10', 'n10'], ['國道1', 'n1'], ['國道2', 'n2'], ['國道3甲', 'n3a'],
-  ['國道3', 'n3'], ['國道4', 'n4'], ['國道5', 'n5'], ['國道6', 'n6'], ['國道8', 'n8'],
-];
-// 事件時效（小時）：事故/障礙物很快被排除，壅塞更短命；施工管制常整夜有效
-const MAX_AGE = {事故: 4, 散落物: 4, 故障車: 4, 障礙: 4, 壅塞: 2,
-                 施工: 24, 管制: 24, 號誌故障: 24, 災變: 24, 路況: 4};
-const RESOLVED = /排除|結束|未見|誤報|已改善/;
+const ROADS = {1: 'n1', 2: 'n2', 3: 'n3', 4: 'n4', 5: 'n5',
+               6: 'n6', 10: 'n10', 8: 'n8', N1H: 'n1e', N3A: 'n3a', 31: 'n3a'};
+const DIRS = {1: 1, 2: -1, 3: 1, 4: -1};   // 1東 2西 3南 4北；南/東=里程遞增
 
-const roadKey = t => { for(const [p, k] of ROADS) if(t.includes(p)) return k; return null; };
-
-function direction(d){
-  if(!d || d.includes('雙')) return 0;
-  if(d.includes('南') || d.includes('東')) return 1;
-  if(d.includes('北') || d.includes('西')) return -1;
-  return 0;
+function eventType(tname, name){
+  if(name.includes('散落')) return '散落物';
+  if(name.includes('故障車')) return '故障車';
+  if(tname.includes('事故') || name.includes('事故')) return '事故';
+  if(name.includes('開放路肩')) return '路肩開放';
+  if(tname.includes('施工') || name.includes('施工')) return '施工';
+  if(tname.includes('壅塞') || name.includes('壅塞')) return '壅塞';
+  if(tname.includes('管制') || name.includes('封閉')) return '管制';
+  return '路況';
 }
 
-function eventType(roadtype, comment){
-  if(/散落|掉落/.test(comment)) return '散落物';
-  if(/拋錨|故障車/.test(comment)) return '故障車';
-  return {事故: '事故', 道路施工: '施工', 阻塞: '壅塞', 交通障礙: '障礙',
-          交通管制: '管制', 號誌故障: '號誌故障', 災變: '災變'}[roadtype] || '路況';
-}
+const tsOf = s => Date.parse(s.replace(' ', 'T') + '+08:00');
 
-function transform(raw){
-  const now = Date.now();
+function transform(xml){
+  const fm = xml.match(/<file_attribute[^>]*time="([^"]+)"/);
+  const updated = fm ? tsOf(fm[1]) : Date.now();
   const out = [];
-  for(const it of raw.result || []){
-    const area = (it.areaNm || '').normalize('NFKC');
-    const comment = (it.comment || '').normalize('NFKC');
-    let rk = roadKey(area) || roadKey(comment);
-    if(!rk || RESOLVED.test(comment)) continue;
-    const etype = eventType(it.roadtype || '', comment);
-    const ts = Date.parse(`${it.happendate}T${(it.happentime || '').slice(0, 8)}+08:00`);
-    if(!ts || now - ts > (MAX_AGE[etype] || 4) * 3600e3) continue;
-    if(rk === 'n1' && (area + comment).includes('高架')) rk = 'n1e';
+  for(const m of xml.matchAll(/<incident ([^>]+)>/g)){
+    const a = {};
+    for(const kv of m[1].matchAll(/(\w+)="([^"]*)"/g)) a[kv[1]] = kv[2];
+    const rk = ROADS[a.freewayId];
+    if(!rk || a.inc_end_time) continue;
+    const etype = eventType(a.inc_type_name || '', a.inc_name || '');
+    if(etype === '路況' && a.inc_type_name === '天候事件') continue;  // 天候常整條路一筆，略過
+    const ts = tsOf(a.inc_time || '');
+    if(!ts) continue;
 
-    let k1 = null, k2 = null;
-    let m = comment.match(/(\d+(?:\.\d+)?)\s*公里到\s*(\d+(?:\.\d+)?)\s*公里/);
-    if(m){
-      [k1, k2] = [parseFloat(m[1]), parseFloat(m[2])].sort((a, b) => a - b);
-    }else if((m = comment.match(/(\d+(?:\.\d+)?)\s*公里/))){
-      k1 = parseFloat(m[1]);
+    let k1 = (parseInt(a.from_milepost) || 0) / 1000;
+    let k2 = (parseInt(a.to_milepost) || 0) / 1000;
+    if(k1 > k2) [k1, k2] = [k2, k1];
+    const c = [a.inc_name, a.interchange, a.inc_location].filter(Boolean).join(' ');
+    const ev = {r: rk, d: DIRS[a.directionId] || 0, t: etype,
+                c: c.replace(/[<>&"']/g, '').slice(0, 60), ts: Math.floor(ts / 1000)};
+    if(k2 > 0){                             // 0/0 視為無樁號，交給 app 用設施名稱比對
+      ev.k1 = k1;
+      if(k2 !== k1) ev.k2 = k2;
     }
-    const lat = parseFloat(it.y1), lon = parseFloat(it.x1);
-    const hasCoord = !isNaN(lat) && !isNaN(lon);
-    if(k1 === null && !hasCoord) continue;
-
-    const ev = {r: rk, d: direction(it.direction), t: etype,
-                c: comment.replace(/[<>&"']/g, '').slice(0, 60),
-                ts: Math.floor(ts / 1000)};
-    if(k1 !== null){ ev.k1 = k1; if(k2 !== null) ev.k2 = k2; }
-    if(hasCoord){ ev.lat = lat; ev.lon = lon; }
+    const lat = parseFloat(a.latitude), lon = parseFloat(a.longitude);
+    if(!isNaN(lat) && !isNaN(lon)){ ev.lat = lat; ev.lon = lon; }
     out.push(ev);
   }
   out.sort((a, b) => a.r < b.r ? -1 : a.r > b.r ? 1 : (a.k1 || 0) - (b.k1 || 0));
-  return {updated: Math.floor(Date.now() / 1000), src: '警廣即時路況', ev: out};
+  return {updated: Math.floor(updated / 1000), src: '高公局1968', ev: out};
 }
 
 export default {
   async fetch(request, env, ctx){
     const cache = caches.default;
-    const key = new Request('https://fwkm-events.cache/v1');
+    const key = new Request('https://fwkm-events.cache/v2');
     let res = await cache.match(key);
     if(!res){
-      let up;
       try{
-        // 注意：警廣伺服器對 Accept: application/json 回 406，不能帶
-        up = await fetch(URL_PBS, {headers: {'User-Agent': 'Mozilla/5.0'}});
+        const up = await fetch(URL_1968, {headers: {'User-Agent': 'Mozilla/5.0'}});
         if(!up.ok) throw new Error('upstream ' + up.status);
-        const data = transform(await up.json());
+        const data = transform(await up.text());
         res = new Response(JSON.stringify(data), {headers: {
           'Content-Type': 'application/json; charset=utf-8',
           'Access-Control-Allow-Origin': '*',

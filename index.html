@@ -87,6 +87,7 @@ body{
 /* ---- 即時路況事件列 ---- */
 .row.ev{background:#7A5200}
 .row.ev.red{background:#8F1D1D}
+.row.ev.ok{background:#14532D}
 .row.ev .sub{font-size:13px}
 
 /* ---- 測速照相警示列：釘在捲動清單頂端 ---- */
@@ -418,8 +419,8 @@ function render(fix, speed, acc){
   const evHtml = evs.map(e => {
     const age = Math.max(0, Math.round((Date.now() / 1000 - e.ts) / 60));
     const ageTxt = age < 60 ? `${age} 分前` : age < 1440 ? `${Math.round(age / 60)} 時前` : '1 天前';
-    return `<div class="row ev${e.t === '事故' ? ' red' : ''}">
-      <div><div class="nm">${e.t}</div><div class="sub">${e.c}</div></div>
+    return `<div class="row ev${e.t === '事故' ? ' red' : e.t === '路肩開放' ? ' ok' : ''}">
+      <div><div class="nm">${e.t}</div>${e.c && e.c !== e.t ? `<div class="sub">${e.c}</div>` : ''}</div>
       <div class="d"><b class="${e.d < 1.5 ? 'near' : ''}">${e.d < 10 ? e.d.toFixed(1) : Math.round(e.d)}</b><i> km</i><em>${ageTxt}</em></div>
     </div>`;
   }).join('');
