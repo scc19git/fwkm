@@ -1,8 +1,9 @@
 name: 更新國道路況事件
 
+# 排程已停用：GitHub 的 Azure 機房連不進政府網段(tisvcloud/警廣都被擋),
+# 排程只會一直失敗寄通知信。正式管線走 Cloudflare Worker(見 worker/)。
+# 保留手動觸發以備測試。
 on:
-  schedule:
-    - cron: '*/5 * * * *'
   workflow_dispatch:
 
 permissions:
