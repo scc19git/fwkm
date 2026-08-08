@@ -90,8 +90,8 @@ body{
 .row.ev.ok{background:#14532D}
 .row.ev .sub{font-size:13px}
 
-/* ---- 測速照相警示列：釘在捲動清單頂端 ---- */
-.row.cam{background:#7A1024;position:sticky;top:0;z-index:2}
+/* ---- 測速照相警示列 ---- */
+.row.cam{background:#7A1024}
 .row.cam.over{animation:camflash 1s steps(2) infinite}
 @keyframes camflash{50%{background:#C51F2E}}
 .lim{
@@ -394,11 +394,13 @@ function render(fix, speed, acc){
     }
   }
   const over = cam && speed != null && speed * 3.6 > cam.lim;
-  const camHtml = cam ? `<div class="row cam${over ? ' over' : ''}">
+  /* 測速照相、路況事件、設施統一丟進 items，最後一起按距離排序 */
+  const items = [];
+  if(cam) items.push({d: cam.d, h: `<div class="row cam${over ? ' over' : ''}">
       <span class="lim">${cam.lim}</span>
       <div class="nm">測速照相</div>
       <div class="d"><b class="${cam.d < 1.5 ? 'near' : ''}">${Math.max(cam.d, 0).toFixed(1)}</b><i> km</i></div>
-    </div>` : '';
+    </div>`});
 
   /* 前方 20 公里內的路況事件，最多兩則；資料超過 30 分鐘沒更新就不顯示 */
   let evs = [];
@@ -416,26 +418,30 @@ function render(fix, speed, acc){
     evs.sort((a,b) => a.d - b.d);
     evs = evs.slice(0, 2);
   }
-  const evHtml = evs.map(e => {
+  for(const e of evs){
     const age = Math.max(0, Math.round((Date.now() / 1000 - e.ts) / 60));
     const ageTxt = age < 60 ? `${age} 分前` : age < 1440 ? `${Math.round(age / 60)} 時前` : '1 天前';
-    return `<div class="row ev${e.t === '事故' ? ' red' : e.t === '路肩開放' ? ' ok' : ''}">
+    items.push({d: e.d, h: `<div class="row ev${e.t === '事故' ? ' red' : e.t === '路肩開放' ? ' ok' : ''}">
       <div><div class="nm">${e.t}</div>${e.c && e.c !== e.t ? `<div class="sub">${e.c}</div>` : ''}</div>
       <div class="d"><b class="${e.d < 1.5 ? 'near' : ''}">${e.d < 10 ? e.d.toFixed(1) : Math.round(e.d)}</b><i> km</i><em>${ageTxt}</em></div>
-    </div>`;
-  }).join('');
+    </div>`});
+  }
 
-  const listEl = $('list'), keepScroll = listEl.scrollTop;   // 定位更新別把使用者捲的位置拉回去
-  listEl.innerHTML = camHtml + evHtml + (ahead.length ? ahead.map((f,idx) => {
+  ahead.forEach((f, idx) => {
     const d = Math.max(f.d, 0);
     const eta = (speed && speed > 4) ? Math.round(d*1000/speed/60) : null;
-    return `<div class="row ${isSA(f.n)?'sa':''} ${isSys(f.n)?'sys':''} ${idx===0?'next':''}">
+    items.push({d, h: `<div class="row ${isSA(f.n)?'sa':''} ${isSys(f.n)?'sys':''} ${idx===0?'next':''}">
       <div><div class="nm">${f.n}</div>${f.s?`<div class="sub">${f.s}</div>`:''}</div>
       <div class="d"><b class="${d<1.5?'near':''}">${d<10?d.toFixed(1):Math.round(d)}</b><i> km</i>
         ${eta!==null?`<em>約 ${eta} 分</em>`:''}</div>
-    </div>`;
-  }).join('') : `<div class="row" style="background:var(--night-2);box-shadow:inset 0 0 0 1px var(--rule)">
-      <div class="nm" style="font-weight:600;color:var(--dim)">${dir===0?'請往前行駛以判定方向':'前方已無設施'}</div></div>`);
+    </div>`});
+  });
+
+  items.sort((a, b) => a.d - b.d);
+  const listEl = $('list'), keepScroll = listEl.scrollTop;   // 定位更新別把使用者捲的位置拉回去
+  listEl.innerHTML = items.length ? items.map(i => i.h).join('')
+    : `<div class="row" style="background:var(--night-2);box-shadow:inset 0 0 0 1px var(--rule)">
+      <div class="nm" style="font-weight:600;color:var(--dim)">${dir===0?'請往前行駛以判定方向':'前方已無設施'}</div></div>`;
   listEl.scrollTop = keepScroll;
 
   $('dot').className = 'dot ' + (acc == null ? '' : acc < 25 ? 'ok' : 'warn');
