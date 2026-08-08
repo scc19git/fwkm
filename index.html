@@ -327,7 +327,7 @@ async function fetchEvents(){
     }catch(e){}
   }
 }
-fetchEvents(); setInterval(fetchEvents, 120000);
+fetchEvents(); setInterval(fetchEvents, 60000);
 
 /* 事件定位：樁號 → comment 內的設施名稱 → 座標（座標常缺漏、缺漏時會指到
    國道起點，所以起點附近的座標解不採用） */
