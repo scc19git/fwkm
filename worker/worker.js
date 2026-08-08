@@ -53,27 +53,41 @@ function transform(xml){
   return {updated: Math.floor(updated / 1000), src: '高公局1968', ev: out};
 }
 
+/* tisvcloud 對 Cloudflare 邊緣是間歇性放行（時而 522），所以：
+   重試 3 次 → 都失敗就回上次成功的備份（app 端超過 30 分鐘會自動隱藏舊資料） */
+async function getUpstream(){
+  for(let i = 0; i < 3; i++){
+    try{
+      const up = await fetch(URL_1968, {headers: {'User-Agent': 'Mozilla/5.0'}});
+      if(up.ok) return await up.text();
+    }catch(e){}
+  }
+  return null;
+}
+
+const HDRS = {
+  'Content-Type': 'application/json; charset=utf-8',
+  'Access-Control-Allow-Origin': '*',
+};
+
 export default {
   async fetch(request, env, ctx){
     const cache = caches.default;
-    const key = new Request('https://fwkm-events.cache/v2');
-    let res = await cache.match(key);
-    if(!res){
-      try{
-        const up = await fetch(URL_1968, {headers: {'User-Agent': 'Mozilla/5.0'}});
-        if(!up.ok) throw new Error('upstream ' + up.status);
-        const data = transform(await up.text());
-        res = new Response(JSON.stringify(data), {headers: {
-          'Content-Type': 'application/json; charset=utf-8',
-          'Access-Control-Allow-Origin': '*',
-          'Cache-Control': 'public, max-age=60',
-        }});
-        ctx.waitUntil(cache.put(key, res.clone()));
-      }catch(e){
-        return new Response(JSON.stringify({error: String(e)}), {status: 502,
-          headers: {'Access-Control-Allow-Origin': '*'}});
-      }
+    const key = new Request('https://fwkm-events.cache/v3');
+    const bak = new Request('https://fwkm-events.cache/v3-backup');
+    const hit = await cache.match(key);
+    if(hit) return hit;
+
+    const xml = await getUpstream();
+    if(xml){
+      const body = JSON.stringify(transform(xml));
+      const res = new Response(body, {headers: {...HDRS, 'Cache-Control': 'public, max-age=60'}});
+      ctx.waitUntil(cache.put(key, res.clone()));
+      ctx.waitUntil(cache.put(bak, new Response(body, {headers: {...HDRS, 'Cache-Control': 'public, max-age=86400'}})));
+      return res;
     }
-    return res;
+    const old = await cache.match(bak);
+    if(old) return new Response(old.body, {headers: {...HDRS, 'Cache-Control': 'public, max-age=30'}});
+    return new Response(JSON.stringify({error: 'upstream unreachable'}), {status: 502, headers: HDRS});
   }
 };
