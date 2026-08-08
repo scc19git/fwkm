@@ -149,10 +149,11 @@ body{
 .route{position:fixed;inset:0;background:var(--night);z-index:8;display:flex;flex-direction:column;
   gap:10px;padding:max(14px,env(safe-area-inset-top)) 14px max(14px,env(safe-area-inset-bottom))}
 .route h2{font-size:20px;font-weight:800}
-.rt-sel{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
-.rt-sel select{flex:1;min-width:120px;background:var(--night-2);color:var(--face);
+.rt-sel{display:flex;gap:8px;align-items:center}
+.rt-sel select{flex:1;min-width:0;background:var(--night-2);color:var(--face);
   border:1px solid var(--rule);border-radius:6px;font:inherit;font-size:16px;padding:9px 6px}
-.rt-sel .arr{color:var(--alert);font-weight:800}
+.rt-sel select.rd{flex:0 0 108px}
+.rt-sel .lbl{color:var(--alert);font-weight:800;font-size:17px}
 .rt-btns{display:flex;gap:8px}
 .rt-btns button{flex:1;background:var(--sign-green);color:var(--face);border:2px solid var(--face);
   border-radius:8px;font:inherit;font-size:17px;font-weight:700;padding:10px;cursor:pointer}
@@ -215,8 +216,13 @@ body{
 <div class="route hide" id="route">
   <h2>路線規劃</h2>
   <div class="rt-sel">
+    <span class="lbl">起</span>
+    <select id="rtAr" class="rd"></select>
     <select id="rtA"></select>
-    <span class="arr">→</span>
+  </div>
+  <div class="rt-sel">
+    <span class="lbl">訖</span>
+    <select id="rtBr" class="rd"></select>
     <select id="rtB"></select>
   </div>
   <div class="rt-btns">
@@ -309,10 +315,11 @@ const isSA = n => /服務區|休息站|休息區/.test(n);
 const isSys = n => /系統/.test(n);
 
 /* ---- 即時路況事件（警廣資料，GitHub Actions 每 5 分鐘轉存到 events-data 分支） ---- */
+const EV_WORKER = '';   // 部署 Cloudflare Worker 後把網址填這裡（見 worker/README.md）
 const EV_URL = 'https://raw.githubusercontent.com/scc19git/fwkm/events-data/events.json';
 let EV = null;
 async function fetchEvents(){
-  for(const u of [EV_URL, 'events.json']){
+  for(const u of [EV_WORKER, EV_URL, 'events.json'].filter(Boolean)){
     try{
       const r = await fetch(`${u}?t=${Date.now()}`, {cache:'no-store'});
       if(r.ok){ EV = await r.json(); return; }
@@ -634,20 +641,37 @@ function routeHtml(segs){
   return `<div class="rt-total">全程約 ${Math.round(total)} 公里</div>` + html;
 }
 
-function fillRouteSelects(){
-  if($('rtA').options.length) return;
-  for(const sel of [$('rtA'), $('rtB')]){
-    for(const k of NET.keys){
-      const g = document.createElement('optgroup');
-      g.label = R[k].label;
-      for(const f of [...R[k].fac].sort((x, y) => x.k - y.k)){
-        const o = document.createElement('option');
-        o.value = `${k}:${f.k}`;
-        o.textContent = `${f.n} ${f.k.toFixed(0)}K`;
-        g.appendChild(o);
-      }
-      sel.appendChild(g);
+function fillFac(sel, rk){
+  sel.innerHTML = '';
+  for(const k of (rk ? [rk] : NET.keys)){
+    const g = document.createElement('optgroup');
+    g.label = R[k].label;
+    for(const f of [...R[k].fac].sort((x, y) => x.k - y.k)){
+      const o = document.createElement('option');
+      o.value = `${k}:${f.k}`;
+      o.textContent = `${f.n} ${f.k.toFixed(0)}K`;
+      g.appendChild(o);
     }
+    sel.appendChild(g);
+  }
+}
+
+function fillRouteSelects(){
+  if($('rtAr').options.length) return;
+  for(const [rs, fs] of [['rtAr', 'rtA'], ['rtBr', 'rtB']]){
+    const rsel = $(rs), fsel = $(fs);
+    const all = document.createElement('option');
+    all.value = '';
+    all.textContent = '全部路線';
+    rsel.appendChild(all);
+    for(const k of NET.keys){
+      const o = document.createElement('option');
+      o.value = k;
+      o.textContent = R[k].label;
+      rsel.appendChild(o);
+    }
+    rsel.onchange = () => fillFac(fsel, rsel.value);
+    fillFac(fsel, '');
   }
 }
 $('bRoute').onclick = () => { fillRouteSelects(); $('route').classList.remove('hide'); };
