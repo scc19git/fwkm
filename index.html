@@ -315,7 +315,7 @@ const isSA = n => /服務區|休息站|休息區/.test(n);
 const isSys = n => /系統/.test(n);
 
 /* ---- 即時路況事件（警廣資料，GitHub Actions 每 5 分鐘轉存到 events-data 分支） ---- */
-const EV_WORKER = '';   // 部署 Cloudflare Worker 後把網址填這裡（見 worker/README.md）
+const EV_WORKER = 'https://fwkm-events.scc19760621.workers.dev';   // 見 worker/README.md
 const EV_URL = 'https://raw.githubusercontent.com/scc19git/fwkm/events-data/events.json';
 let EV = null;
 async function fetchEvents(){
