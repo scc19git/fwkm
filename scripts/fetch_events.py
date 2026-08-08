@@ -57,8 +57,30 @@ def parse_ts(item):
         return None
 
 
+def fetch():
+    # GitHub runner 直連曾整批失敗：帶瀏覽器 UA、重試、必要時放寬憑證驗證
+    import ssl
+    import sys
+    import time
+    # 注意：這個伺服器對 Accept: application/json 回 406，不能帶
+    req = urllib.request.Request(URL, headers={
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0 Safari/537.36',
+    })
+    last = None
+    for attempt in range(3):
+        for ctx in (None, ssl._create_unverified_context()):
+            try:
+                with urllib.request.urlopen(req, timeout=30, context=ctx) as resp:
+                    return json.load(resp)
+            except Exception as e:
+                last = e
+                print(f'attempt {attempt} ctx={"loose" if ctx else "strict"}: {e!r}', file=sys.stderr)
+        time.sleep(5)
+    raise last
+
+
 def main():
-    raw = json.load(urllib.request.urlopen(URL, timeout=30))
+    raw = fetch()
     now = datetime.now(TZ)
     out = []
     for it in raw.get('result', []):

@@ -145,6 +145,30 @@ body{
   background:var(--sign-green);color:var(--face);border:2px solid var(--face);
   border-radius:8px;font:inherit;font-size:18px;font-weight:700;padding:14px 34px;cursor:pointer;
 }
+/* ---- 路線規劃 ---- */
+.route{position:fixed;inset:0;background:var(--night);z-index:8;display:flex;flex-direction:column;
+  gap:10px;padding:max(14px,env(safe-area-inset-top)) 14px max(14px,env(safe-area-inset-bottom))}
+.route h2{font-size:20px;font-weight:800}
+.rt-sel{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.rt-sel select{flex:1;min-width:120px;background:var(--night-2);color:var(--face);
+  border:1px solid var(--rule);border-radius:6px;font:inherit;font-size:16px;padding:9px 6px}
+.rt-sel .arr{color:var(--alert);font-weight:800}
+.rt-btns{display:flex;gap:8px}
+.rt-btns button{flex:1;background:var(--sign-green);color:var(--face);border:2px solid var(--face);
+  border-radius:8px;font:inherit;font-size:17px;font-weight:700;padding:10px;cursor:pointer}
+.rt-btns #rtClose{background:var(--night-2);border-color:var(--rule);color:var(--dim)}
+.rt-out{flex:1;overflow-y:auto;display:flex;flex-direction:column;gap:6px;
+  -webkit-overflow-scrolling:touch}
+.rt-road{background:var(--night-2);border:1px solid var(--rule);border-radius:6px;
+  padding:9px 12px;font-weight:800;font-size:16px;color:var(--alert);margin-top:8px}
+.rt-total{background:var(--sign-blue);border-radius:6px;padding:10px 12px;font-weight:800;font-size:17px}
+.rt-f{background:var(--sign-green);border-radius:6px;padding:9px 12px;font-size:19px;font-weight:700;
+  display:flex;justify-content:space-between;align-items:center;
+  box-shadow:inset 0 0 0 1px rgba(242,245,241,.45)}
+.rt-f.sa{background:var(--rest-blue)}
+.rt-f.sys{color:var(--sys-red)}
+.rt-f span{color:rgba(242,245,241,.6);font-weight:600;font-size:14px}
+
 .hide{display:none!important}
 @media (prefers-reduced-motion:no-preference){
   .row,.plate{transition:box-shadow .2s ease,background .2s ease}
@@ -179,12 +203,27 @@ body{
     <button id="bElev" aria-pressed="false">汐五高架</button>
   </div>
   <button class="pip" id="bPip" aria-pressed="false">浮動視窗</button>
+  <button class="pip" id="bRoute">路線</button>
   <div class="gps"><span class="dot" id="dot"></span><span id="acc">—</span></div>
 </div>
 
 <div class="sr">
   <canvas id="pipCv" width="320" height="180"></canvas>
   <video id="pipVid" muted playsinline></video>
+</div>
+
+<div class="route hide" id="route">
+  <h2>路線規劃</h2>
+  <div class="rt-sel">
+    <select id="rtA"></select>
+    <span class="arr">→</span>
+    <select id="rtB"></select>
+  </div>
+  <div class="rt-btns">
+    <button id="rtGo">列出經過的交流道</button>
+    <button id="rtClose">關閉</button>
+  </div>
+  <div class="rt-out" id="rtOut"></div>
 </div>
 
 <script>
@@ -525,6 +564,101 @@ VID.addEventListener('enterpictureinpicture', () => {
 VID.addEventListener('leavepictureinpicture', () => {
   $('bPip').setAttribute('aria-pressed', 'false'); keepAlive(false);
 });
+
+/* ================= 路線規劃 =================
+   同名的系統交流道就是兩條國道的交點，據此把九條國道接成一張圖，
+   Dijkstra 找最短路徑後列出沿途所有設施。汐五高架不參與規劃。   */
+const NET = (() => {
+  const keys = Object.keys(R).filter(k => k !== 'n1e');
+  const byName = {};
+  for(const k of keys) for(const f of R[k].fac)
+    (byName[f.n] = byName[f.n] || []).push([k, f.k]);
+  return {keys, links: Object.values(byName).filter(a => a.length > 1)};
+})();
+
+function planRoute(a, b){
+  const pts = {};
+  const add = (r, km) => (pts[r] = pts[r] || new Set()).add(km);
+  for(const l of NET.links) for(const [r, km] of l) add(r, km);
+  add(a.r, a.k); add(b.r, b.k);
+  const id = (r, km) => r + ':' + km;
+  const adj = {};
+  const link = (u, v, w) => {
+    (adj[u] = adj[u] || []).push([v, w]);
+    (adj[v] = adj[v] || []).push([u, w]);
+  };
+  for(const r in pts){
+    const arr = [...pts[r]].sort((x, y) => x - y);
+    for(let i = 1; i < arr.length; i++)
+      link(id(r, arr[i-1]), id(r, arr[i]), arr[i] - arr[i-1]);
+  }
+  for(const l of NET.links)
+    for(let i = 1; i < l.length; i++)
+      link(id(l[0][0], l[0][1]), id(l[i][0], l[i][1]), 3);   // 轉接記 3 公里，偏好少換路線
+
+  const src = id(a.r, a.k), dst = id(b.r, b.k);
+  const dist = {[src]: 0}, prev = {}, done = {};
+  for(;;){
+    let u = null;
+    for(const n in dist) if(!done[n] && (u === null || dist[n] < dist[u])) u = n;
+    if(u === null) return null;
+    if(u === dst) break;
+    done[u] = 1;
+    for(const [v, w] of adj[u] || []){
+      const nd = dist[u] + w;
+      if(dist[v] === undefined || nd < dist[v]){ dist[v] = nd; prev[v] = u; }
+    }
+  }
+  const segs = [];
+  for(let u = dst; u; u = prev[u]){
+    const i = u.indexOf(':'), r = u.slice(0, i), km = parseFloat(u.slice(i + 1));
+    const first = segs[0];
+    if(first && first.r === r) first.from = km;
+    else segs.unshift({r, from: km, to: km});
+  }
+  return segs.filter(s => s.from !== s.to);
+}
+
+function routeHtml(segs){
+  let total = 0, html = '';
+  for(const s of segs){
+    const d = s.to > s.from ? 1 : -1, r = R[s.r];
+    total += Math.abs(s.to - s.from);
+    html += `<div class="rt-road">${r.label} ${d > 0 ? r.fwd : r.rev}（${s.from.toFixed(0)}K → ${s.to.toFixed(0)}K）</div>`;
+    html += r.fac
+      .filter(f => f.k >= Math.min(s.from, s.to) - 0.5 && f.k <= Math.max(s.from, s.to) + 0.5)
+      .sort((x, y) => (x.k - y.k) * d)
+      .map(f => `<div class="rt-f ${isSA(f.n)?'sa':''} ${isSys(f.n)?'sys':''}">${f.n}<span>${f.k.toFixed(0)}K</span></div>`)
+      .join('');
+  }
+  return `<div class="rt-total">全程約 ${Math.round(total)} 公里</div>` + html;
+}
+
+function fillRouteSelects(){
+  if($('rtA').options.length) return;
+  for(const sel of [$('rtA'), $('rtB')]){
+    for(const k of NET.keys){
+      const g = document.createElement('optgroup');
+      g.label = R[k].label;
+      for(const f of [...R[k].fac].sort((x, y) => x.k - y.k)){
+        const o = document.createElement('option');
+        o.value = `${k}:${f.k}`;
+        o.textContent = `${f.n} ${f.k.toFixed(0)}K`;
+        g.appendChild(o);
+      }
+      sel.appendChild(g);
+    }
+  }
+}
+$('bRoute').onclick = () => { fillRouteSelects(); $('route').classList.remove('hide'); };
+$('rtClose').onclick = () => $('route').classList.add('hide');
+$('rtGo').onclick = () => {
+  const pv = v => { const i = v.indexOf(':'); return {r: v.slice(0, i), k: parseFloat(v.slice(i + 1))}; };
+  const a = pv($('rtA').value), b = pv($('rtB').value);
+  if(a.r === b.r && a.k === b.k){ $('rtOut').innerHTML = '<div class="rt-road">起點與終點相同</div>'; return; }
+  const segs = planRoute(a, b);
+  $('rtOut').innerHTML = segs ? routeHtml(segs) : '<div class="rt-road">找不到路徑</div>';
+};
 
 function onPos(p){
   const {latitude:lat, longitude:lon, speed, accuracy} = p.coords;
