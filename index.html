@@ -174,12 +174,14 @@ body{
   border-radius:8px;font:inherit;font-size:17px;font-weight:700;padding:10px;cursor:pointer}
 .rt-btns #rtSave{flex:0 1 auto;background:var(--sign-blue)}
 .rt-btns #rtClose{background:var(--night-2);border-color:var(--rule);color:var(--dim)}
-.rt-fav{display:flex;flex-wrap:wrap;gap:6px}
+.rt-fav{display:flex;flex-wrap:wrap;gap:8px}
 .rt-fav:empty{display:none}
-.rt-fav .chip{display:flex;align-items:center;gap:6px;background:var(--night-2);
-  border:1px solid var(--alert);border-radius:16px;padding:7px 6px 7px 12px;
-  font-size:15px;font-weight:700;cursor:pointer}
-.rt-fav .chip .x{color:var(--dim);font-weight:600;padding:0 6px;cursor:pointer}
+.rt-fav .chip{display:flex;align-items:center;gap:4px;background:var(--night-2);
+  border:2px solid var(--alert);border-radius:22px;padding:10px 6px 10px 16px;
+  font-size:20px;font-weight:800;cursor:pointer}
+.rt-fav .chip small{font-size:14px;font-weight:600;color:var(--dim)}
+.rt-fav .chip .ed,.rt-fav .chip .x{color:var(--dim);font-size:17px;font-weight:600;
+  padding:0 8px;cursor:pointer}
 .rt-out{flex:1;overflow-y:auto;display:flex;flex-direction:column;gap:6px;
   -webkit-overflow-scrolling:touch}
 .rt-road{background:var(--night-2);border:1px solid var(--rule);border-radius:6px;
@@ -662,7 +664,7 @@ function fillRouteSelects(){
   }
 }
 const pv = v => { const i = v.indexOf(':'); return {r: v.slice(0, i), k: parseFloat(v.slice(i + 1))}; };
-let PLANS = [], planMeta = {an: '', bn: '', fromChip: false};
+let PLANS = [], planSel = 0, planFor = '', planMeta = {an: '', bn: '', fromChip: false};
 
 function runPlan(av, bv, meta){
   planMeta = meta || {an: facName(av), bn: facName(bv), fromChip: false};
@@ -671,19 +673,26 @@ function runPlan(av, bv, meta){
   const s1 = planRoute(a, b);
   if(!s1){ $('rtOut').innerHTML = '<div class="rt-road">找不到路徑</div>'; return; }
   PLANS = [s1];
+  planFor = av + '|' + bv;
   /* 替代路線：把主要幹道（含同走廊的高架）加重權數再算一次，走不同幹道才收錄 */
   const avoid = new Set([mainRoad(s1)]);
   if(avoid.has('n1') || avoid.has('n1e')){ avoid.add('n1'); avoid.add('n1e'); }
   const s2 = planRoute(a, b, avoid);
   if(s2 && mainRoad(s2) !== mainRoad(s1) && !avoid.has(mainRoad(s2)) && routeLen(s2) <= routeLen(s1) * 3)
     PLANS.push(s2);
-  if(PLANS.length === 1 && planMeta.fromChip){ activatePlan(0); return; }   // 常用路線只有一案→直接上主畫面
+  if(planMeta.fromChip){
+    /* 常用路線:有記方案就走該方案,只有一案也直接走;其餘才跳選擇 */
+    const vi = planMeta.via ? PLANS.findIndex(p => mainRoad(p) === planMeta.via)
+                            : (PLANS.length === 1 ? 0 : -1);
+    if(vi >= 0){ activatePlan(vi); return; }
+  }
   showPlan(0);
 }
 
 const planLabel = res => `經 ${R[mainRoad(res)].label}　約 ${Math.round(routeLen(res))} 公里`;
 
 function showPlan(sel){
+  planSel = sel;
   let html = '';
   if(PLANS.length > 1)
     html += '<div class="rt-opts">' + PLANS.map((p, i) =>
@@ -706,7 +715,8 @@ $('rtOut').onclick = e => {
 };
 
 function activatePlan(i){
-  setTrip(PLANS[i], `${planMeta.an.replace(/交流道$/, '')} → ${planMeta.bn.replace(/交流道$/, '')}（${R[mainRoad(PLANS[i])].short}）`);
+  const base = planMeta.nm || `${planMeta.an.replace(/交流道$/, '')} → ${planMeta.bn.replace(/交流道$/, '')}`;
+  setTrip(PLANS[i], `${base}（${R[mainRoad(PLANS[i])].short}）`);
   $('route').classList.add('hide');
 }
 
@@ -715,13 +725,34 @@ const favLoad = () => { try{ return JSON.parse(localStorage.getItem('favRoutes')
 const favSave = f => localStorage.setItem('favRoutes', JSON.stringify(f));
 const facName = v => { const p = pv(v); const f = R[p.r].fac.find(x => x.k === p.k); return f ? f.n : v; };
 
+const favLabel = f => f.nm || `${f.an.replace(/交流道$/, '')} → ${f.bn.replace(/交流道$/, '')}`;
+
 function renderFavs(){
   $('rtFav').innerHTML = '';
   favLoad().forEach((f, i) => {
     const chip = document.createElement('span');
     chip.className = 'chip';
-    chip.textContent = `${f.an} → ${f.bn}`;
-    chip.onclick = () => runPlan(f.a, f.b, {an: f.an, bn: f.bn, fromChip: true});
+    const t = document.createElement('span');
+    t.textContent = favLabel(f);
+    chip.appendChild(t);
+    if(f.via){
+      const v = document.createElement('small');
+      v.textContent = `（${R[f.via].short}）`;
+      chip.appendChild(v);
+    }
+    chip.onclick = () => runPlan(f.a, f.b, {an: f.an, bn: f.bn, nm: f.nm, via: f.via, fromChip: true});
+    const ed = document.createElement('span');
+    ed.className = 'ed';
+    ed.textContent = '✎';
+    ed.onclick = ev => {
+      ev.stopPropagation();
+      const fs = favLoad();
+      const nv = prompt('路線名稱', fs[i].nm || favLabel(fs[i]));
+      if(nv === null) return;
+      fs[i].nm = nv.trim() || undefined;
+      favSave(fs); renderFavs();
+    };
+    chip.appendChild(ed);
     const x = document.createElement('span');
     x.className = 'x';
     x.textContent = '✕';
@@ -736,8 +767,12 @@ function renderFavs(){
 
 $('rtSave').onclick = () => {
   const a = $('rtA').value, b = $('rtB').value;
-  const fs = favLoad().filter(f => !(f.a === a && f.b === b));
-  fs.unshift({a, b, an: facName(a), bn: facName(b)});
+  /* 剛規劃過同一組起訖的話，記住目前選的方案（路線一/二） */
+  const via = (planFor === a + '|' + b && PLANS.length) ? mainRoad(PLANS[planSel]) : undefined;
+  const nm = prompt('路線名稱（留白用預設）', '');
+  if(nm === null) return;
+  const fs = favLoad().filter(f => !(f.a === a && f.b === b && f.via === via));
+  fs.unshift({a, b, an: facName(a), bn: facName(b), nm: nm.trim() || undefined, via});
   favSave(fs.slice(0, 8));
   renderFavs();
 };
