@@ -63,7 +63,7 @@ def main():
     out = []
     for inc in re.findall(r'<incident ([^>]+)>', xml):
         a = dict(re.findall(r'(\w+)="([^"]*)"', inc))
-        rk = ROADS.get(a.get('freewayId', ''))
+        rk = ROADS.get(a.get('freewayId', '')) or ('t61' if a.get('expresswayId') == '61' else None)
         if not rk or a.get('inc_end_time'):
             continue
         etype = event_type(a.get('inc_type_name', ''), a.get('inc_name', ''))
