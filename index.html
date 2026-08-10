@@ -174,14 +174,15 @@ body{
   border-radius:8px;font:inherit;font-size:17px;font-weight:700;padding:10px;cursor:pointer}
 .rt-btns #rtSave{flex:0 1 auto;background:var(--sign-blue)}
 .rt-btns #rtClose{background:var(--night-2);border-color:var(--rule);color:var(--dim)}
-.rt-fav{display:flex;flex-wrap:wrap;gap:8px}
+.rt-fav{display:flex;flex-direction:column;gap:8px}
 .rt-fav:empty{display:none}
-.rt-fav .chip{display:flex;align-items:center;gap:4px;background:var(--night-2);
-  border:2px solid var(--alert);border-radius:22px;padding:10px 6px 10px 16px;
+.rt-fav .chip{display:flex;align-items:center;gap:4px;width:100%;background:var(--night-2);
+  border:2px solid var(--alert);border-radius:12px;padding:11px 8px 11px 16px;
   font-size:20px;font-weight:800;cursor:pointer}
+.rt-fav .chip .t{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;text-align:left}
 .rt-fav .chip small{font-size:14px;font-weight:600;color:var(--dim)}
-.rt-fav .chip .ed,.rt-fav .chip .x{color:var(--dim);font-size:17px;font-weight:600;
-  padding:0 8px;cursor:pointer}
+.rt-fav .chip .up,.rt-fav .chip .ed,.rt-fav .chip .x{color:var(--dim);font-size:18px;font-weight:600;
+  padding:0 9px;cursor:pointer;flex:none}
 .rt-out{flex:1;overflow-y:auto;display:flex;flex-direction:column;gap:6px;
   -webkit-overflow-scrolling:touch}
 .rt-road{background:var(--night-2);border:1px solid var(--rule);border-radius:6px;
@@ -733,14 +734,26 @@ function renderFavs(){
     const chip = document.createElement('span');
     chip.className = 'chip';
     const t = document.createElement('span');
+    t.className = 't';
     t.textContent = favLabel(f);
-    chip.appendChild(t);
     if(f.via){
       const v = document.createElement('small');
       v.textContent = `（${R[f.via].short}）`;
-      chip.appendChild(v);
+      t.appendChild(v);
     }
+    chip.appendChild(t);
     chip.onclick = () => runPlan(f.a, f.b, {an: f.an, bn: f.bn, nm: f.nm, via: f.via, fromChip: true});
+    const up = document.createElement('span');
+    up.className = 'up';
+    up.textContent = '↑';
+    up.onclick = ev => {
+      ev.stopPropagation();
+      if(i === 0) return;
+      const fs = favLoad();
+      [fs[i - 1], fs[i]] = [fs[i], fs[i - 1]];
+      favSave(fs); renderFavs();
+    };
+    chip.appendChild(up);
     const ed = document.createElement('span');
     ed.className = 'ed';
     ed.textContent = '✎';
@@ -836,7 +849,12 @@ function tripPos(fix){
 $('tripClear').onclick = clearTrip;
 tripBarUpd();
 
-$('bRoute').onclick = () => { fillRouteSelects(); renderFavs(); $('route').classList.remove('hide'); };
+$('bRoute').onclick = () => {
+  fillRouteSelects(); renderFavs();
+  $('rtOut').innerHTML = '';               // 每次打開都從乾淨狀態開始
+  PLANS = []; planFor = '';
+  $('route').classList.remove('hide');
+};
 $('rtClose').onclick = () => $('route').classList.add('hide');
 $('rtGo').onclick = () => runPlan($('rtA').value, $('rtB').value);
 
