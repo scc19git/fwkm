@@ -158,7 +158,14 @@ body{
 .rt-btns{display:flex;gap:8px}
 .rt-btns button{flex:1;background:var(--sign-green);color:var(--face);border:2px solid var(--face);
   border-radius:8px;font:inherit;font-size:17px;font-weight:700;padding:10px;cursor:pointer}
+.rt-btns #rtSave{flex:0 1 auto;background:var(--sign-blue)}
 .rt-btns #rtClose{background:var(--night-2);border-color:var(--rule);color:var(--dim)}
+.rt-fav{display:flex;flex-wrap:wrap;gap:6px}
+.rt-fav:empty{display:none}
+.rt-fav .chip{display:flex;align-items:center;gap:6px;background:var(--night-2);
+  border:1px solid var(--alert);border-radius:16px;padding:7px 6px 7px 12px;
+  font-size:15px;font-weight:700;cursor:pointer}
+.rt-fav .chip .x{color:var(--dim);font-weight:600;padding:0 6px;cursor:pointer}
 .rt-out{flex:1;overflow-y:auto;display:flex;flex-direction:column;gap:6px;
   -webkit-overflow-scrolling:touch}
 .rt-road{background:var(--night-2);border:1px solid var(--rule);border-radius:6px;
@@ -179,7 +186,7 @@ body{
 </head>
 <body>
 
-<div class="start" id="start">
+<div class="start hide" id="start">
   <h1>國道里程</h1>
   <p>顯示目前所在的國道樁號，前方的交流道、服務區距離、固定式測速照相警示，以及警廣即時路況（事故、故障車、散落物等，需網路）。<br>國道 1、2、3、3甲、4、5、6、8、10 號及汐五高架，資料離線內建。<br>行駛中請固定於支架上。</p>
   <button id="go">開始定位</button>
@@ -228,8 +235,10 @@ body{
   </div>
   <div class="rt-btns">
     <button id="rtGo">列出經過的交流道</button>
+    <button id="rtSave">☆ 存常用</button>
     <button id="rtClose">關閉</button>
   </div>
+  <div class="rt-fav" id="rtFav"></div>
   <div class="rt-out" id="rtOut"></div>
 </div>
 
@@ -681,15 +690,49 @@ function fillRouteSelects(){
     fillFac(fsel, '');
   }
 }
-$('bRoute').onclick = () => { fillRouteSelects(); $('route').classList.remove('hide'); };
-$('rtClose').onclick = () => $('route').classList.add('hide');
-$('rtGo').onclick = () => {
-  const pv = v => { const i = v.indexOf(':'); return {r: v.slice(0, i), k: parseFloat(v.slice(i + 1))}; };
-  const a = pv($('rtA').value), b = pv($('rtB').value);
+const pv = v => { const i = v.indexOf(':'); return {r: v.slice(0, i), k: parseFloat(v.slice(i + 1))}; };
+function runPlan(av, bv){
+  const a = pv(av), b = pv(bv);
   if(a.r === b.r && a.k === b.k){ $('rtOut').innerHTML = '<div class="rt-road">起點與終點相同</div>'; return; }
   const segs = planRoute(a, b);
   $('rtOut').innerHTML = segs ? routeHtml(segs) : '<div class="rt-road">找不到路徑</div>';
+}
+
+/* ---- 常用路線（localStorage） ---- */
+const favLoad = () => { try{ return JSON.parse(localStorage.getItem('favRoutes') || '[]'); }catch(e){ return []; } };
+const favSave = f => localStorage.setItem('favRoutes', JSON.stringify(f));
+const facName = v => { const p = pv(v); const f = R[p.r].fac.find(x => x.k === p.k); return f ? f.n : v; };
+
+function renderFavs(){
+  $('rtFav').innerHTML = '';
+  favLoad().forEach((f, i) => {
+    const chip = document.createElement('span');
+    chip.className = 'chip';
+    chip.textContent = `${f.an} → ${f.bn}`;
+    chip.onclick = () => runPlan(f.a, f.b);
+    const x = document.createElement('span');
+    x.className = 'x';
+    x.textContent = '✕';
+    x.onclick = ev => {
+      ev.stopPropagation();
+      const fs = favLoad(); fs.splice(i, 1); favSave(fs); renderFavs();
+    };
+    chip.appendChild(x);
+    $('rtFav').appendChild(chip);
+  });
+}
+
+$('rtSave').onclick = () => {
+  const a = $('rtA').value, b = $('rtB').value;
+  const fs = favLoad().filter(f => !(f.a === a && f.b === b));
+  fs.unshift({a, b, an: facName(a), bn: facName(b)});
+  favSave(fs.slice(0, 8));
+  renderFavs();
 };
+
+$('bRoute').onclick = () => { fillRouteSelects(); renderFavs(); $('route').classList.remove('hide'); };
+$('rtClose').onclick = () => $('route').classList.add('hide');
+$('rtGo').onclick = () => runPlan($('rtA').value, $('rtB').value);
 
 function onPos(p){
   const {latitude:lat, longitude:lon, speed, accuracy} = p.coords;
@@ -706,15 +749,21 @@ function setSeg(v){
   $('bElev').setAttribute('aria-pressed', String(v));
 }
 
-$('go').onclick = async () => {
-  if(!navigator.geolocation){ $('err').textContent = '此瀏覽器不支援定位'; return; }
+async function startLocate(){
+  if(!navigator.geolocation){
+    $('err').textContent = '此瀏覽器不支援定位';
+    $('start').classList.remove('hide');
+    return;
+  }
   navigator.geolocation.watchPosition(onPos, e => {
     $('err').textContent = '定位失敗：' + e.message + '（請確認已允許定位，且使用 https 開啟）';
     $('start').classList.remove('hide');
   }, {enableHighAccuracy:true, maximumAge:1000, timeout:15000});
   $('start').classList.add('hide');
   try{ wakeLock = await navigator.wakeLock.request('screen'); }catch(e){}
-};
+}
+$('go').onclick = startLocate;
+startLocate();   // 開啟即定位，失敗才顯示啟動畫面
 document.addEventListener('visibilitychange', async () => {
   if(document.visibilityState === 'visible' && !wakeLock){
     try{ wakeLock = await navigator.wakeLock.request('screen'); }catch(e){}
