@@ -147,6 +147,19 @@ body{
   background:var(--sign-green);color:var(--face);border:2px solid var(--face);
   border-radius:8px;font:inherit;font-size:18px;font-weight:700;padding:14px 34px;cursor:pointer;
 }
+/* ---- 行程列與路線方案 ---- */
+.tripbar{display:flex;align-items:center;gap:8px;background:var(--night-2);
+  border:1px solid var(--alert);border-radius:8px;padding:8px 12px;font-size:16px;font-weight:700}
+.tripbar .x{margin-left:auto;background:none;border:0;color:var(--dim);
+  font:inherit;font-size:16px;cursor:pointer;padding:0 4px}
+.rt-opts{display:flex;gap:8px}
+.rt-opt{flex:1;background:var(--night-2);border:2px solid var(--rule);border-radius:8px;color:var(--face);
+  font:inherit;font-size:17px;font-weight:800;padding:10px;cursor:pointer;text-align:left}
+.rt-opt small{display:block;font-size:13px;font-weight:600;color:var(--dim);margin-top:3px}
+.rt-opt.on{border-color:var(--alert)}
+.rt-start{background:var(--sign-green);color:var(--face);border:2px solid var(--face);border-radius:8px;
+  font:inherit;font-size:17px;font-weight:700;padding:11px;cursor:pointer;flex:none}
+
 /* ---- 路線規劃 ---- */
 .route{position:fixed;inset:0;background:var(--night);z-index:8;display:flex;flex-direction:column;
   gap:10px;padding:max(14px,env(safe-area-inset-top)) 14px max(14px,env(safe-area-inset-bottom))}
@@ -203,6 +216,11 @@ body{
 <div class="plate idle" id="plate">
   <div class="km" id="km">尚未取得位置</div>
   <div class="road" id="roadName"></div>
+</div>
+
+<div class="tripbar hide" id="tripBar">
+  <span id="tripLbl"></span>
+  <button class="x" id="tripClear">✕</button>
 </div>
 
 <div class="list" id="list"></div>
@@ -364,14 +382,23 @@ function fmtKm(km){
   return `${String(w).padStart(3,'0')}<span class="k">K+</span><span class="m">${String(m).padStart(3,'0')}</span>`;
 }
 
+let lastPos = [null, null, null];
+function rerender(){ render(lastPos[0], lastPos[1], lastPos[2]); }
+
 function render(fix, speed, acc){
+  lastPos = [fix, speed, acc];
   if(!fix){
     $('plate').className = 'plate idle';
     $('km').textContent = '不在國道上（待命中）';
     $('roadName').textContent = '';
     $('shieldNo').textContent = '—';
     $('heading').textContent = '待命';
-    $('list').innerHTML = '';
+    /* 有行程時先把整條路線列出來，等定位對上就開始倒數 */
+    $('list').innerHTML = !TRIP ? '' : TRIP.items.map(it =>
+      `<div class="row ${isSA(it.n)?'sa':''} ${isSys(it.n)?'sys':''}">
+        <div><div class="nm">${it.n}</div><div class="sub">${R[it.r].label}</div></div>
+        <div class="d"><b>${it.k.toFixed(0)}</b><i> K</i></div>
+      </div>`).join('');
     return;
   }
   const r = R[fix.road];
@@ -384,10 +411,14 @@ function render(fix, speed, acc){
     : `<span class="arrow">▲</span> ${dir > 0 ? r.fwd : r.rev}`;
   $('spd').textContent = speed == null ? '—' : Math.round(speed * 3.6);
 
-  const ahead = dir === 0 ? [] : r.fac
-    .map(f => ({...f, d: (f.k - fix.km) * dir}))
-    .filter(f => f.d > -0.3)
-    .sort((a,b) => a.d - b.d);
+  /* 行程模式:定位落在路線上就改用「沿路線」清單(跨路線接續、含快速公路連結長度) */
+  const tp = tripPos(fix);
+  const ahead = tp != null
+    ? TRIP.items.map(it => ({n: it.n, s: it.s, k: it.k, d: it.pos - tp})).filter(f => f.d > -0.3)
+    : dir === 0 ? [] : r.fac
+      .map(f => ({...f, d: (f.k - fix.km) * dir}))
+      .filter(f => f.d > -0.3)
+      .sort((a,b) => a.d - b.d);
 
   /* 前方 10 公里內、拍我這個行向的最近一支測速照相；四元素 [k1,dir,速限,k2] 為區間測速 */
   let cam = null;
@@ -631,19 +662,52 @@ function fillRouteSelects(){
   }
 }
 const pv = v => { const i = v.indexOf(':'); return {r: v.slice(0, i), k: parseFloat(v.slice(i + 1))}; };
-function runPlan(av, bv){
+let PLANS = [], planMeta = {an: '', bn: '', fromChip: false};
+
+function runPlan(av, bv, meta){
+  planMeta = meta || {an: facName(av), bn: facName(bv), fromChip: false};
   const a = pv(av), b = pv(bv);
   if(a.r === b.r && a.k === b.k){ $('rtOut').innerHTML = '<div class="rt-road">起點與終點相同</div>'; return; }
   const s1 = planRoute(a, b);
   if(!s1){ $('rtOut').innerHTML = '<div class="rt-road">找不到路徑</div>'; return; }
-  let html = routeHtml(s1, '路線一　');
-  /* 替代路線：把主要幹道（含同走廊的高架）加重權數再算一次，走不同幹道才顯示 */
+  PLANS = [s1];
+  /* 替代路線：把主要幹道（含同走廊的高架）加重權數再算一次，走不同幹道才收錄 */
   const avoid = new Set([mainRoad(s1)]);
   if(avoid.has('n1') || avoid.has('n1e')){ avoid.add('n1'); avoid.add('n1e'); }
   const s2 = planRoute(a, b, avoid);
   if(s2 && mainRoad(s2) !== mainRoad(s1) && !avoid.has(mainRoad(s2)) && routeLen(s2) <= routeLen(s1) * 3)
-    html += '<div style="height:14px"></div>' + routeHtml(s2, '路線二　');
+    PLANS.push(s2);
+  if(PLANS.length === 1 && planMeta.fromChip){ activatePlan(0); return; }   // 常用路線只有一案→直接上主畫面
+  showPlan(0);
+}
+
+const planLabel = res => `經 ${R[mainRoad(res)].label}　約 ${Math.round(routeLen(res))} 公里`;
+
+function showPlan(sel){
+  let html = '';
+  if(PLANS.length > 1)
+    html += '<div class="rt-opts">' + PLANS.map((p, i) =>
+      `<button class="rt-opt${i === sel ? ' on' : ''}" data-opt="${i}">路線${'一二'[i]}<small>${planLabel(p)}</small></button>`).join('') + '</div>';
+  html += `<button class="rt-start" data-go="${sel}">⛳ 開始這條路線（顯示在主畫面）</button>`;
+  html += routeHtml(PLANS[sel], `路線${'一二'[sel]}　`);
   $('rtOut').innerHTML = html;
+}
+
+$('rtOut').onclick = e => {
+  const o = e.target.closest('[data-opt]');
+  if(o){
+    const i = +o.dataset.opt;
+    if(planMeta.fromChip) activatePlan(i);    // 從常用路線來的，選了方案就直接開始
+    else showPlan(i);
+    return;
+  }
+  const g = e.target.closest('[data-go]');
+  if(g) activatePlan(+g.dataset.go);
+};
+
+function activatePlan(i){
+  setTrip(PLANS[i], `${planMeta.an.replace(/交流道$/, '')} → ${planMeta.bn.replace(/交流道$/, '')}（${R[mainRoad(PLANS[i])].short}）`);
+  $('route').classList.add('hide');
 }
 
 /* ---- 常用路線（localStorage） ---- */
@@ -657,7 +721,7 @@ function renderFavs(){
     const chip = document.createElement('span');
     chip.className = 'chip';
     chip.textContent = `${f.an} → ${f.bn}`;
-    chip.onclick = () => runPlan(f.a, f.b);
+    chip.onclick = () => runPlan(f.a, f.b, {an: f.an, bn: f.bn, fromChip: true});
     const x = document.createElement('span');
     x.className = 'x';
     x.textContent = '✕';
@@ -677,6 +741,65 @@ $('rtSave').onclick = () => {
   favSave(fs.slice(0, 8));
   renderFavs();
 };
+
+/* ================= 行程模式 =================
+   啟用路線後主畫面直接列出整條路線的設施；GPS 一對到路線上的任一點，
+   就以「沿路線」的累積距離倒數（跨路線也會接續顯示）。          */
+let TRIP = null;
+try{ TRIP = JSON.parse(localStorage.getItem('trip') || 'null'); }catch(e){}
+
+function tripBuild(res, label){
+  const segs = [], items = [];
+  let cum = 0;
+  res.segs.forEach((s, i) => {
+    if(i > 0){ const v = NET.vias[res.trans[i - 1]]; if(v) cum += v.len; }
+    const d = s.to > s.from ? 1 : -1, len = Math.abs(s.to - s.from);
+    if(!len) return;
+    segs.push({r: s.r, from: s.from, to: s.to, cum});
+    R[s.r].fac
+      .filter(f => f.k >= Math.min(s.from, s.to) - 0.5 && f.k <= Math.max(s.from, s.to) + 0.5)
+      .sort((x, y) => (x.k - y.k) * d)
+      .forEach(f => items.push({r: s.r, n: f.n, s: f.s, k: f.k, pos: cum + (f.k - s.from) * d}));
+    cum += len;
+  });
+  /* 轉接點(如鶯歌系統)會在兩條路段各出現一次，去重 */
+  const dd = [];
+  for(const it of items){
+    const last = dd[dd.length - 1];
+    if(last && last.n === it.n && Math.abs(last.pos - it.pos) < 1) continue;
+    dd.push(it);
+  }
+  return {label, segs, items: dd, total: cum};
+}
+
+function setTrip(res, label){
+  TRIP = tripBuild(res, label);
+  localStorage.setItem('trip', JSON.stringify(TRIP));
+  tripBarUpd(); rerender();
+}
+function clearTrip(){
+  TRIP = null;
+  localStorage.removeItem('trip');
+  tripBarUpd(); rerender();
+}
+function tripBarUpd(){
+  $('tripBar').classList.toggle('hide', !TRIP);
+  if(TRIP) $('tripLbl').textContent = '⛳ ' + TRIP.label;
+}
+/* 目前定位在路線上的累積位置；不在路線上回傳 null。高架與國1主線視為同走廊 */
+function tripPos(fix){
+  if(!TRIP || !fix) return null;
+  for(const s of TRIP.segs){
+    const same = fix.road === s.r ||
+      (fix.road === 'n1' && s.r === 'n1e') || (fix.road === 'n1e' && s.r === 'n1');
+    if(!same) continue;
+    if(fix.km < Math.min(s.from, s.to) - 0.3 || fix.km > Math.max(s.from, s.to) + 0.3) continue;
+    return s.cum + (fix.km - s.from) * (s.to > s.from ? 1 : -1);
+  }
+  return null;
+}
+$('tripClear').onclick = clearTrip;
+tripBarUpd();
 
 $('bRoute').onclick = () => { fillRouteSelects(); renderFavs(); $('route').classList.remove('hide'); };
 $('rtClose').onclick = () => $('route').classList.add('hide');
