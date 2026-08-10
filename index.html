@@ -462,20 +462,62 @@ function render(fix, speed, acc){
 }
 
 /* ================= 路線規劃 =================
-   同名的系統交流道就是兩條國道的交點，據此把九條國道接成一張圖，
-   Dijkstra 找最短路徑後列出沿途所有設施。汐五高架不參與規劃。   */
+   同名的系統交流道/轉接道就是兩條路線的交點，據此接成一張圖，
+   Dijkstra 找最短路徑後列出沿途所有設施。                     */
 const NET = (() => {
-  const keys = Object.keys(R).filter(k => k !== 'n1e');
+  const keys = Object.keys(R);
   const byName = {};
   for(const k of keys) for(const f of R[k].fac)
     (byName[f.n] = byName[f.n] || []).push([k, f.k]);
-  return {keys, links: Object.values(byName).filter(a => a.length > 1)};
+  const links = Object.values(byName).filter(a => a.length > 1);
+  /* 高架端點在主線與高架的名稱不同，手動接起來 */
+  const pair = (r1, n1, r2, n2) => {
+    const f1 = R[r1].fac.find(f => f.n === n1), f2 = R[r2].fac.find(f => f.n === n2);
+    if(f1 && f2) links.push([[r1, f1.k], [r2, f2.k]]);
+  };
+  pair('n1', '高架道路汐止端', 'n1e', '汐止端');
+  pair('n1', '高架道路楊梅端', 'n1e', '楊梅端');
+
+  /* 東西向快速公路是隱形的跨路網連結（例：台66 接起平鎮系統與大溪）。
+     從設施說明的「台XX」自動歸組，兩兩之間以直線距離×1.25 當作連結長度。 */
+  const EXPWY = ['61', '62', '64', '65', '66', '68', '72', '74', '76', '78', '82', '84', '86', '88'];
+  const kmPt = (r, km) => {
+    let best = null, bd = 1e18;
+    for(const m of R[r].markers){
+      const d = Math.abs(m[0] - km);
+      if(d < bd){ bd = d; best = m; }
+    }
+    return best;
+  };
+  const groups = {};
+  for(const k of keys) for(const f of R[k].fac){
+    const m = /台(\d+)/.exec(f.s || '');
+    if(m && EXPWY.includes(m[1])) (groups[m[1]] = groups[m[1]] || []).push([k, f.k]);
+  }
+  const daxi = R.n3.fac.find(f => f.n === '大溪交流道');
+  if(daxi) (groups['66'] = groups['66'] || []).push(['n3', daxi.k]);   // 資料未標台66，手動補
+  const vias = {};   // 'r1:k1>r2:k2' -> {name, len}
+  const viaLinks = [];
+  for(const t in groups){
+    const g = groups[t];
+    for(let i = 0; i < g.length; i++) for(let j = i + 1; j < g.length; j++){
+      if(g[i][0] === g[j][0]) continue;
+      const p = kmPt(g[i][0], g[i][1]), q = kmPt(g[j][0], g[j][1]);
+      const len = Math.round(Math.hypot((p[1] - q[1]) * 110574, (p[2] - q[2]) * 101000) * 1.25 / 100) / 10;
+      if(len > 40) continue;
+      const a = `${g[i][0]}:${g[i][1]}`, b = `${g[j][0]}:${g[j][1]}`;
+      vias[`${a}>${b}`] = vias[`${b}>${a}`] = {name: `台${t}線`, len};
+      viaLinks.push([g[i], g[j], len]);
+    }
+  }
+  return {keys, links, vias, viaLinks};
 })();
 
-function planRoute(a, b){
+function planRoute(a, b, avoid){
   const pts = {};
   const add = (r, km) => (pts[r] = pts[r] || new Set()).add(km);
   for(const l of NET.links) for(const [r, km] of l) add(r, km);
+  for(const [p, q] of NET.viaLinks){ add(p[0], p[1]); add(q[0], q[1]); }
   add(a.r, a.k); add(b.r, b.k);
   const id = (r, km) => r + ':' + km;
   const adj = {};
@@ -485,12 +527,15 @@ function planRoute(a, b){
   };
   for(const r in pts){
     const arr = [...pts[r]].sort((x, y) => x - y);
+    const w = avoid && avoid.has(r) ? 5 : 1;   // 避開的路線加重權數，逼出替代路線
     for(let i = 1; i < arr.length; i++)
-      link(id(r, arr[i-1]), id(r, arr[i]), arr[i] - arr[i-1]);
+      link(id(r, arr[i-1]), id(r, arr[i]), (arr[i] - arr[i-1]) * w);
   }
   for(const l of NET.links)
     for(let i = 1; i < l.length; i++)
       link(id(l[0][0], l[0][1]), id(l[i][0], l[i][1]), 3);   // 轉接記 3 公里，偏好少換路線
+  for(const [p, q, len] of NET.viaLinks)
+    link(id(p[0], p[1]), id(q[0], q[1]), len + 2);           // 走快速公路連結：實際長度+轉接成本
 
   const src = id(a.r, a.k), dst = id(b.r, b.k);
   const dist = {[src]: 0}, prev = {}, done = {};
@@ -505,29 +550,51 @@ function planRoute(a, b){
       if(dist[v] === undefined || nd < dist[v]){ dist[v] = nd; prev[v] = u; }
     }
   }
-  const segs = [];
-  for(let u = dst; u; u = prev[u]){
+  const path = [];
+  for(let u = dst; u; u = prev[u]) path.unshift(u);
+  const segs = [], trans = [];
+  for(const u of path){
     const i = u.indexOf(':'), r = u.slice(0, i), km = parseFloat(u.slice(i + 1));
-    const first = segs[0];
-    if(first && first.r === r) first.from = km;
-    else segs.unshift({r, from: km, to: km});
+    const last = segs[segs.length - 1];
+    if(last && last.r === r){ last.to = km; }
+    else{
+      if(last) trans.push(`${last.r}:${last.to}>${r}:${km}`);
+      segs.push({r, from: km, to: km});
+    }
   }
-  return segs.filter(s => s.from !== s.to);
+  return {segs, trans};
 }
 
-function routeHtml(segs){
-  let total = 0, html = '';
-  for(const s of segs){
+function routeLen(res){
+  let t = res.segs.reduce((s, x) => s + Math.abs(x.to - x.from), 0);
+  for(const k of res.trans){ const v = NET.vias[k]; if(v) t += v.len; }
+  return t;
+}
+function mainRoad(res){
+  let best = null, bl = -1;
+  for(const s of res.segs){
+    const l = Math.abs(s.to - s.from);
+    if(l > bl){ bl = l; best = s.r; }
+  }
+  return best;
+}
+function routeHtml(res, title){
+  let html = '';
+  res.segs.forEach((s, i) => {
+    if(i > 0){
+      const v = NET.vias[res.trans[i - 1]];
+      if(v) html += `<div class="rt-road" style="color:var(--dim)">↓ 經 ${v.name} 快速公路（約 ${Math.round(v.len)} 公里）</div>`;
+    }
+    if(s.from === s.to) return;    // 只是借點轉乘，不列路段
     const d = s.to > s.from ? 1 : -1, r = R[s.r];
-    total += Math.abs(s.to - s.from);
     html += `<div class="rt-road">${r.label} ${d > 0 ? r.fwd : r.rev}（${s.from.toFixed(0)}K → ${s.to.toFixed(0)}K）</div>`;
     html += r.fac
       .filter(f => f.k >= Math.min(s.from, s.to) - 0.5 && f.k <= Math.max(s.from, s.to) + 0.5)
       .sort((x, y) => (x.k - y.k) * d)
       .map(f => `<div class="rt-f ${isSA(f.n)?'sa':''} ${isSys(f.n)?'sys':''}">${f.n}<span>${f.k.toFixed(0)}K</span></div>`)
       .join('');
-  }
-  return `<div class="rt-total">全程約 ${Math.round(total)} 公里</div>` + html;
+  });
+  return `<div class="rt-total">${title}經 ${R[mainRoad(res)].label}：全程約 ${Math.round(routeLen(res))} 公里</div>` + html;
 }
 
 function fillFac(sel, rk){
@@ -567,8 +634,16 @@ const pv = v => { const i = v.indexOf(':'); return {r: v.slice(0, i), k: parseFl
 function runPlan(av, bv){
   const a = pv(av), b = pv(bv);
   if(a.r === b.r && a.k === b.k){ $('rtOut').innerHTML = '<div class="rt-road">起點與終點相同</div>'; return; }
-  const segs = planRoute(a, b);
-  $('rtOut').innerHTML = segs ? routeHtml(segs) : '<div class="rt-road">找不到路徑</div>';
+  const s1 = planRoute(a, b);
+  if(!s1){ $('rtOut').innerHTML = '<div class="rt-road">找不到路徑</div>'; return; }
+  let html = routeHtml(s1, '路線一　');
+  /* 替代路線：把主要幹道（含同走廊的高架）加重權數再算一次，走不同幹道才顯示 */
+  const avoid = new Set([mainRoad(s1)]);
+  if(avoid.has('n1') || avoid.has('n1e')){ avoid.add('n1'); avoid.add('n1e'); }
+  const s2 = planRoute(a, b, avoid);
+  if(s2 && mainRoad(s2) !== mainRoad(s1) && !avoid.has(mainRoad(s2)) && routeLen(s2) <= routeLen(s1) * 3)
+    html += '<div style="height:14px"></div>' + routeHtml(s2, '路線二　');
+  $('rtOut').innerHTML = html;
 }
 
 /* ---- 常用路線（localStorage） ---- */
