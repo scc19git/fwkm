@@ -104,11 +104,12 @@ body{
 .bar{display:flex;align-items:center;gap:8px;font-size:11px;color:var(--dim)}
 .bar .seg{display:flex;border:1px solid var(--rule);border-radius:6px;overflow:hidden}
 .bar .seg button{
-  background:none;border:0;color:var(--dim);font:inherit;padding:6px 10px;cursor:pointer;
+  background:none;border:0;color:var(--dim);font:inherit;font-size:18px;font-weight:700;
+  padding:10px 14px;cursor:pointer;
 }
 .bar .seg button[aria-pressed="true"]{background:var(--face);color:var(--night);font-weight:700}
 .bar .pip{background:none;border:1px solid var(--rule);border-radius:6px;color:var(--dim);
-  font:inherit;padding:6px 10px;cursor:pointer}
+  font:inherit;font-size:18px;font-weight:700;padding:10px 14px;cursor:pointer}
 .bar .pip[aria-pressed="true"]{background:var(--alert);color:var(--night);border-color:var(--alert);font-weight:700}
 .bar .gps{margin-left:auto;display:flex;align-items:center;gap:6px}
 .dot{width:7px;height:7px;border-radius:50%;background:#7a7a7a}
@@ -211,14 +212,8 @@ body{
     <button id="bFlat" aria-pressed="true">平面</button>
     <button id="bElev" aria-pressed="false">汐五高架</button>
   </div>
-  <button class="pip" id="bPip" aria-pressed="false">浮動視窗</button>
   <button class="pip" id="bRoute">路線</button>
   <div class="gps"><span class="dot" id="dot"></span><span id="acc">—</span></div>
-</div>
-
-<div class="sr">
-  <canvas id="pipCv" width="320" height="180"></canvas>
-  <video id="pipVid" muted playsinline></video>
 </div>
 
 <div class="route hide" id="route">
@@ -377,7 +372,6 @@ function render(fix, speed, acc){
     $('shieldNo').textContent = '—';
     $('heading').textContent = '待命';
     $('list').innerHTML = '';
-    pipState = null; drawPip();
     return;
   }
   const r = R[fix.road];
@@ -465,137 +459,7 @@ function render(fix, speed, acc){
   $('dot').className = 'dot ' + (acc == null ? '' : acc < 25 ? 'ok' : 'warn');
   $('acc').textContent = (acc == null ? '' : `±${Math.round(acc)}m`) +
                          (fix.off != null ? ` · 偏移 ${Math.round(fix.off)}m` : '');
-  pipState = {fix, r, next: ahead[0] || null, cam, speed};
-  drawPip();
 }
-
-/* ================= 浮動視窗 =================
-   手機瀏覽器的畫面沒辦法直接浮在其他 app 上，但影片的子母畫面可以。
-   所以把資訊畫到 canvas，用 captureStream 轉成影片流再送進 PiP。      */
-let pipState = null, pipStream = null;
-const CV = $('pipCv'), VID = $('pipVid');
-
-function box(g, x, y, w, h, r){
-  g.beginPath();
-  g.roundRect ? g.roundRect(x, y, w, h, r) : g.rect(x, y, w, h);
-}
-
-function drawPip(){
-  const g = CV.getContext('2d');
-  g.fillStyle = '#0B100D'; g.fillRect(0, 0, 320, 180);
-  g.textBaseline = 'alphabetic';
-
-  if(!pipState || !pipState.fix){
-    g.fillStyle = 'rgba(242,245,241,.55)';
-    g.font = '600 18px system-ui,"PingFang TC","Noto Sans TC",sans-serif';
-    g.textAlign = 'center';
-    g.fillText('不在國道上', 160, 96);
-    return;
-  }
-  const {fix, r, next, cam, speed} = pipState;
-
-  /* 里程牌 */
-  g.fillStyle = '#00593C'; box(g, 6, 6, 308, 84, 8); g.fill();
-  g.strokeStyle = '#F2F5F1'; g.lineWidth = 3; box(g, 12, 12, 296, 72, 5); g.stroke();
-  const whole = Math.floor(fix.km);
-  let metres = Math.round((fix.km - whole) * 10) * 100;
-  let w = whole; if(metres === 1000){ w++; metres = 0; }
-  g.fillStyle = '#F2F5F1'; g.textAlign = 'center';
-  g.font = '800 38px system-ui,"Helvetica Neue",sans-serif';
-  g.fillText(`${String(w).padStart(3,'0')}K+${String(metres).padStart(3,'0')}`, 160, 62);
-  g.font = '700 12px system-ui,"PingFang TC","Noto Sans TC",sans-serif';
-  g.textAlign = 'left';
-  g.fillText(`${r.short} ${dir === 0 ? '' : (dir > 0 ? r.fwd : r.rev)}`, 20, 30);
-  if(speed != null){
-    g.textAlign = 'right';
-    g.fillText(`${Math.round(speed * 3.6)} km/h`, 300, 30);
-  }
-
-  /* 3 公里內的測速照相優先於下一個設施 */
-  if(cam && cam.d <= 3){
-    const ov = speed != null && speed * 3.6 > cam.lim;
-    g.fillStyle = ov ? '#C51F2E' : '#7A1024'; box(g, 6, 98, 308, 76, 8); g.fill();
-    g.strokeStyle = 'rgba(242,245,241,.85)'; g.lineWidth = 2; box(g, 8, 100, 304, 72, 6); g.stroke();
-    g.beginPath(); g.arc(42, 136, 21, 0, Math.PI * 2);
-    g.fillStyle = '#fff'; g.fill();
-    g.lineWidth = 6; g.strokeStyle = '#C00000'; g.stroke();
-    g.fillStyle = '#111'; g.textAlign = 'center';
-    g.font = '800 18px system-ui,sans-serif';
-    g.fillText(String(cam.lim), 42, 143);
-    g.fillStyle = '#F2F5F1'; g.textAlign = 'left';
-    g.font = '800 26px system-ui,"PingFang TC","Noto Sans TC",sans-serif';
-    g.fillText(cam.zone ? '區間測速' : '測速照相', 74, 145);
-    g.textAlign = 'right';
-    g.fillStyle = cam.d < 1.5 ? '#F2C230' : '#F2F5F1';
-    g.font = '800 30px system-ui,"Helvetica Neue",sans-serif';
-    g.fillText(Math.max(cam.d, 0).toFixed(1), 268, 160);
-    g.fillStyle = 'rgba(242,245,241,.8)';
-    g.font = '600 13px system-ui,sans-serif';
-    g.fillText('km', 300, 160);
-  }else if(next){
-    const sa = isSA(next.n);
-    g.fillStyle = sa ? '#1565C0' : '#00593C'; box(g, 6, 98, 308, 76, 8); g.fill();
-    g.strokeStyle = 'rgba(242,245,241,.85)'; g.lineWidth = 2; box(g, 8, 100, 304, 72, 6); g.stroke();
-    g.fillStyle = isSys(next.n) ? '#FF5A5A' : '#F2F5F1'; g.textAlign = 'left';
-    g.font = '800 30px system-ui,"PingFang TC","Noto Sans TC",sans-serif';
-    g.fillText(next.n, 20, 130);
-    const d = Math.max(next.d, 0);
-    g.textAlign = 'right';
-    g.fillStyle = d < 1.5 ? '#F2C230' : '#F2F5F1';
-    g.font = '800 30px system-ui,"Helvetica Neue",sans-serif';
-    g.fillText(d < 10 ? d.toFixed(1) : String(Math.round(d)), 268, 160);
-    g.fillStyle = 'rgba(242,245,241,.8)';
-    g.font = '600 13px system-ui,sans-serif';
-    g.fillText('km', 300, 160);
-  }else{
-    g.fillStyle = 'rgba(242,245,241,.5)';
-    g.font = '600 15px system-ui,"PingFang TC","Noto Sans TC",sans-serif';
-    g.textAlign = 'center';
-    g.fillText(dir === 0 ? '判定方向中' : '前方已無設施', 160, 140);
-  }
-}
-
-/* 分頁被切到背景時瀏覽器會凍結計時器；播一段無聲音訊可以讓它繼續跑。
-   定位回呼由系統推送、不依賴計時器，所以畫面仍會隨位置更新。 */
-let audioCtx = null;
-function keepAlive(on){
-  if(on && !audioCtx){
-    try{
-      audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-      const o = audioCtx.createOscillator(), gn = audioCtx.createGain();
-      gn.gain.value = 0.0001; o.connect(gn); gn.connect(audioCtx.destination); o.start();
-    }catch(e){}
-  }else if(!on && audioCtx){ audioCtx.close(); audioCtx = null; }
-}
-
-$('bPip').onclick = async () => {
-  try{
-    if(document.pictureInPictureElement){
-      await document.exitPictureInPicture();
-      return;
-    }
-    if(!document.pictureInPictureEnabled){
-      $('bPip').textContent = '此瀏覽器不支援';
-      return;
-    }
-    drawPip();
-    if(!pipStream){
-      pipStream = CV.captureStream(2);   // 2 fps 足夠，省電
-      VID.srcObject = pipStream;
-    }
-    await VID.play();
-    await VID.requestPictureInPicture();
-  }catch(e){
-    $('bPip').textContent = '浮動視窗失敗';
-    setTimeout(() => { $('bPip').textContent = '浮動視窗'; }, 2500);
-  }
-};
-VID.addEventListener('enterpictureinpicture', () => {
-  $('bPip').setAttribute('aria-pressed', 'true'); keepAlive(true);
-});
-VID.addEventListener('leavepictureinpicture', () => {
-  $('bPip').setAttribute('aria-pressed', 'false'); keepAlive(false);
-});
 
 /* ================= 路線規劃 =================
    同名的系統交流道就是兩條國道的交點，據此把九條國道接成一張圖，
