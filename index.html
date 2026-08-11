@@ -873,7 +873,17 @@ function setSeg(v){
   $('bElev').setAttribute('aria-pressed', String(v));
 }
 
-async function startLocate(){
+/* 螢幕常亮：wake lock 會被系統釋放（切出 app、鎖屏、來電…），
+   所以釋放就歸零，並靠 可見性/定時/觸碰 三個時機補申請 */
+async function keepAwake(){
+  if(wakeLock || document.visibilityState !== 'visible') return;
+  try{
+    wakeLock = await navigator.wakeLock.request('screen');
+    wakeLock.addEventListener('release', () => { wakeLock = null; });
+  }catch(e){ wakeLock = null; }
+}
+
+function startLocate(){
   if(!navigator.geolocation){
     $('err').textContent = '此瀏覽器不支援定位';
     $('start').classList.remove('hide');
@@ -884,15 +894,13 @@ async function startLocate(){
     $('start').classList.remove('hide');
   }, {enableHighAccuracy:true, maximumAge:1000, timeout:15000});
   $('start').classList.add('hide');
-  try{ wakeLock = await navigator.wakeLock.request('screen'); }catch(e){}
+  keepAwake();
 }
 $('go').onclick = startLocate;
 startLocate();   // 開啟即定位，失敗才顯示啟動畫面
-document.addEventListener('visibilitychange', async () => {
-  if(document.visibilityState === 'visible' && !wakeLock){
-    try{ wakeLock = await navigator.wakeLock.request('screen'); }catch(e){}
-  }
-});
+document.addEventListener('visibilitychange', keepAwake);
+document.addEventListener('click', keepAwake);
+setInterval(keepAwake, 30000);
 </script>
 </body>
 </html>
