@@ -858,11 +858,18 @@ $('bRoute').onclick = () => {
 $('rtClose').onclick = () => $('route').classList.add('hide');
 $('rtGo').onclick = () => runPlan($('rtA').value, $('rtB').value);
 
+let lastFixTime = 0;
 function onPos(p){
-  const {latitude:lat, longitude:lon, speed, accuracy} = p.coords;
-  const fix = locate(lat, lon);
-  if(fix) updateDir(fix.road, fix.km);
-  render(fix, speed, accuracy);
+  lastFixTime = Date.now();
+  try{
+    const {latitude:lat, longitude:lon, speed, accuracy} = p.coords;
+    const fix = locate(lat, lon);
+    if(fix) updateDir(fix.road, fix.km);
+    render(fix, speed, accuracy);
+  }catch(err){
+    /* 單次錯誤別讓畫面從此凍住 */
+    $('acc').textContent = '⚠ ' + err.message;
+  }
 }
 
 $('bFlat').onclick = () => setSeg(false);
@@ -902,22 +909,48 @@ async function keepAwake(){
   }
 }
 
+/* iOS(尤其加入主畫面模式)的 watchPosition 會無聲斷線 → 看門狗偵測並重啟 */
+let watchId = null, lastRestart = 0;
+function startWatch(){
+  if(watchId != null){ try{ navigator.geolocation.clearWatch(watchId); }catch(e){} }
+  lastRestart = Date.now();
+  watchId = navigator.geolocation.watchPosition(onPos, e => {
+    if(e.code === e.PERMISSION_DENIED){
+      $('err').textContent = '定位失敗：' + e.message + '（請確認已允許定位，且使用 https 開啟）';
+      $('start').classList.remove('hide');
+    }
+  }, {enableHighAccuracy:true, maximumAge:1000, timeout:15000});
+}
+
 function startLocate(){
   if(!navigator.geolocation){
     $('err').textContent = '此瀏覽器不支援定位';
     $('start').classList.remove('hide');
     return;
   }
-  navigator.geolocation.watchPosition(onPos, e => {
-    $('err').textContent = '定位失敗：' + e.message + '（請確認已允許定位，且使用 https 開啟）';
-    $('start').classList.remove('hide');
-  }, {enableHighAccuracy:true, maximumAge:1000, timeout:15000});
+  startWatch();
   $('start').classList.add('hide');
   keepAwake();
 }
 $('go').onclick = startLocate;
 startLocate();   // 開啟即定位，失敗才顯示啟動畫面
-document.addEventListener('visibilitychange', keepAwake);
+
+setInterval(() => {
+  if(document.visibilityState !== 'visible' || !lastFixTime) return;
+  const age = Date.now() - lastFixTime;
+  if(age > 20000 && Date.now() - lastRestart > 15000){
+    $('dot').className = 'dot warn';
+    $('acc').textContent = '定位中斷，重新連線…';
+    startWatch();
+  }
+}, 5000);
+
+document.addEventListener('visibilitychange', () => {
+  keepAwake();
+  /* 從背景回來,定位若已停超過 5 秒就直接重啟,不等看門狗 */
+  if(document.visibilityState === 'visible' && watchId != null &&
+     lastFixTime && Date.now() - lastFixTime > 5000) startWatch();
+});
 document.addEventListener('click', keepAwake);
 setInterval(keepAwake, 30000);
 </script>
