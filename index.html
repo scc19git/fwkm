@@ -438,14 +438,14 @@ function render(fix, speed, acc){
   /* 行程模式:定位落在路線上就改用「沿路線」清單(跨路線接續、含快速公路連結長度) */
   const tp = tripPos(fix);
   const ahead = tp != null
-    ? TRIP.items.map(it => ({n: it.n, s: it.s, k: it.k, d: it.pos - tp})).filter(f => f.d > -0.3)
+    ? TRIP.items.map(it => ({n: it.n, s: it.s, k: it.k, d: it.pos - tp})).filter(f => f.d > -0.05)
     : dir === 0 ? [] : r.fac
       .map(f => {
         /* 交流道南下/北上出口位置不同,有方向別資料就用 */
         const fk = dir === 1 && f.ks != null ? f.ks : dir === -1 && f.kn != null ? f.kn : f.k;
         return {...f, d: (fk - fix.km) * dir};
       })
-      .filter(f => f.d > -0.3)
+      .filter(f => f.d > -0.05)     // 過了 50 公尺就從清單消失
       .sort((a,b) => a.d - b.d);
 
   /* 前方 10 公里內、拍我這個行向的最近一支測速照相；四元素 [k1,dir,速限,k2] 為區間測速 */
