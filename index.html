@@ -222,6 +222,11 @@ body{
   <div class="road" id="roadName"></div>
 </div>
 
+<div class="tripbar hide" id="updBar"
+  style="position:fixed;left:14px;right:14px;bottom:74px;z-index:20;background:var(--sign-green);cursor:pointer">
+  🔄 有新版本，點此更新
+</div>
+
 <div class="tripbar hide" id="tripBar">
   <span id="tripLbl"></span>
   <button class="x" id="tripClear">✕</button>
@@ -240,7 +245,7 @@ body{
 </div>
 
 <div class="route hide" id="route">
-  <h2>路線規劃</h2>
+  <h2>路線規劃 <small id="appVer" style="font-size:12px;font-weight:600;color:var(--dim)"></small></h2>
   <div class="rt-sel">
     <span class="lbl">起</span>
     <select id="rtAr" class="rd"></select>
@@ -1009,6 +1014,21 @@ function startLocate(){
 $('go').onclick = startLocate;
 startLocate();   // 開啟即定位，失敗才顯示啟動畫面
 $('bRoute').onclick();   // 開啟預設先進路線畫面（點常用路線或關閉即回主畫面）
+
+/* ---- 版本 & 更新檢查:GitHub Pages 有快取,iOS 主畫面模式常抓到舊版 ---- */
+const APP_VER = 'v2026-08-22b';
+$('appVer').textContent = APP_VER;
+async function checkUpdate(){
+  try{
+    const r = await fetch('index.html', {method: 'HEAD', cache: 'no-store'});
+    const lm = new Date(r.headers.get('last-modified') || 0);
+    const mine = new Date(document.lastModified);
+    if(lm - mine > 90000) $('updBar').classList.remove('hide');
+  }catch(e){}
+}
+$('updBar').onclick = () => location.reload();
+setTimeout(checkUpdate, 4000);
+setInterval(checkUpdate, 600000);
 
 setInterval(() => {
   if(document.visibilityState !== 'visible' || !lastFixTime) return;
