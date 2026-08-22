@@ -112,6 +112,7 @@ body{
   font:inherit;font-size:18px;font-weight:700;padding:10px 14px;cursor:pointer}
 .bar .pip[aria-pressed="true"]{background:var(--alert);color:var(--night);border-color:var(--alert);font-weight:700}
 .bar .gps{margin-left:auto;display:flex;align-items:center;gap:6px}
+#awake{font-size:24px;line-height:1;color:var(--alert)}
 .dot{width:7px;height:7px;border-radius:50%;background:#7a7a7a}
 .dot.ok{background:#3FBF7F}.dot.warn{background:var(--alert)}
 
@@ -235,7 +236,7 @@ body{
   </div>
   <button class="pip" id="bRoute">路線</button>
   <button class="pip" id="bVoice"></button>
-  <div class="gps"><span class="dot" id="dot"></span><span id="acc">—</span></div>
+  <div class="gps"><span class="dot" id="dot"></span><span id="acc">—</span><span id="awake"></span></div>
 </div>
 
 <div class="route hide" id="route">
@@ -411,8 +412,13 @@ function fmtKm(km){
 let lastPos = [null, null, null];
 function rerender(){ render(lastPos[0], lastPos[1], lastPos[2]); }
 
+function awakeIcon(){
+  $('awake').textContent = wakeLock ? '☀' : (wakeVid && !wakeVid.paused ? '▶' : '·');
+}
+
 function render(fix, speed, acc){
   lastPos = [fix, speed, acc];
+  awakeIcon();
   if(!fix){
     $('plate').className = 'plate idle';
     $('km').textContent = '不在國道上（待命中）';
@@ -541,8 +547,7 @@ function render(fix, speed, acc){
 
   $('dot').className = 'dot ' + (acc == null ? '' : acc < 25 ? 'ok' : 'warn');
   $('acc').textContent = (acc == null ? '' : `±${Math.round(acc)}m`) +
-                         (fix.off != null ? ` · 偏移 ${Math.round(fix.off)}m` : '') +
-                         (wakeLock ? ' ☀' : wakeVid && !wakeVid.paused ? ' ▶' : ' ·');
+                         (fix.off != null ? ` · 偏移 ${Math.round(fix.off)}m` : '');
 }
 
 /* ================= 路線規劃 =================
@@ -961,6 +966,7 @@ function videoKeepAwake(){
   wakeVid.play().catch(() => {});
 }
 async function keepAwake(){
+  awakeIcon();
   if(document.visibilityState !== 'visible') return;
   if(wakeVid && wakeVid.paused && !wakeLock) wakeVid.play().catch(() => {});
   if(!('wakeLock' in navigator)){ videoKeepAwake(); return; }
@@ -973,6 +979,7 @@ async function keepAwake(){
     wakeLock = null;
     videoKeepAwake();
   }
+  awakeIcon();
 }
 
 /* iOS(尤其加入主畫面模式)的 watchPosition 會無聲斷線 → 看門狗偵測並重啟 */
