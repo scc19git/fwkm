@@ -174,7 +174,8 @@ body{
 .rt-btns button{flex:1;background:var(--sign-green);color:var(--face);border:2px solid var(--face);
   border-radius:8px;font:inherit;font-size:17px;font-weight:700;padding:10px;cursor:pointer}
 .rt-btns #rtSave{flex:0 1 auto;background:var(--sign-blue)}
-.rt-btns #rtClose{background:var(--night-2);border-color:var(--rule);color:var(--dim)}
+#rtClose{flex:none;background:var(--night-2);border:2px solid var(--rule);border-radius:8px;
+  color:var(--dim);font:inherit;font-size:19px;font-weight:700;padding:13px;cursor:pointer}
 .rt-fav{display:flex;flex-direction:column;gap:8px}
 .rt-fav:empty{display:none}
 .rt-fav .chip{display:flex;align-items:center;gap:4px;width:100%;background:var(--night-2);
@@ -259,10 +260,10 @@ body{
   <div class="rt-btns">
     <button id="rtGo">列出經過的交流道</button>
     <button id="rtSave">☆ 存常用</button>
-    <button id="rtClose">關閉</button>
   </div>
   <div class="rt-fav" id="rtFav"></div>
   <div class="rt-out" id="rtOut"></div>
+  <button id="rtClose">關閉</button>
 </div>
 
 <script>
@@ -1016,7 +1017,7 @@ startLocate();   // 開啟即定位，失敗才顯示啟動畫面
 $('bRoute').onclick();   // 開啟預設先進路線畫面（點常用路線或關閉即回主畫面）
 
 /* ---- 版本 & 更新檢查:GitHub Pages 有快取,iOS 主畫面模式常抓到舊版 ---- */
-const APP_VER = 'v2026-08-22b';
+const APP_VER = 'v2026-08-22c';
 $('appVer').textContent = APP_VER;
 async function checkUpdate(){
   try{
