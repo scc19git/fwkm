@@ -28,7 +28,7 @@ function transform(xml){
   for(const m of xml.matchAll(/<incident ([^>]+)>/g)){
     const a = {};
     for(const kv of m[1].matchAll(/(\w+)="([^"]*)"/g)) a[kv[1]] = kv[2];
-    const rk = ROADS[a.freewayId] || (a.expresswayId === '61' ? 't61' : null);
+    const rk = ROADS[a.freewayId] || {61: 't61', 66: 't66'}[a.expresswayId];
     if(!rk || a.inc_end_time) continue;
     const etype = eventType(a.inc_type_name || '', a.inc_name || '');
     if(etype === '路況' && a.inc_type_name === '天候事件') continue;  // 天候常整條路一筆，略過

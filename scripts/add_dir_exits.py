@@ -12,10 +12,13 @@ LAT_M, LON_M = 110574, 101000
 lines = io.open('fwkm/index.html', encoding='utf-8').read().split('\n')
 fw_i = next(i for i, l in enumerate(lines) if l.startswith('const FW='))
 t61_i = next(i for i, l in enumerate(lines) if l.startswith('const T61='))
+t66_i = next(i for i, l in enumerate(lines) if l.startswith('const T66='))
 FW = json.loads(lines[fw_i][len('const FW='):].rstrip(';'))
 T61 = json.loads(lines[t61_i][len('const T61='):].rstrip(';'))
+T66 = json.loads(lines[t66_i][len('const T66='):].rstrip(';'))
 roads = dict(FW['roads'])
 roads['t61'] = T61
+roads['t66'] = T66
 
 nodes = [e for e in json.load(open('junctions.json', encoding='utf-8'))['elements']
          if e.get('tags', {}).get('name')]
@@ -77,6 +80,7 @@ for rk, r in roads.items():
 
 lines[fw_i] = 'const FW=' + json.dumps(FW, ensure_ascii=False, separators=(',', ':')) + ';'
 lines[t61_i] = 'const T61=' + json.dumps(T61, ensure_ascii=False, separators=(',', ':')) + ';'
+lines[t66_i] = 'const T66=' + json.dumps(T66, ensure_ascii=False, separators=(',', ':')) + ';'
 io.open('fwkm/index.html', 'w', encoding='utf-8', newline='\n').write('\n'.join(lines))
 print(f"補方向別里程 {stats['patched']} 筆,不變 {stats['skipped']} 筆")
 for d in detail[:25]:
