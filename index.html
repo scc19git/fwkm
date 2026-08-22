@@ -178,12 +178,12 @@ body{
 .rt-fav{display:flex;flex-direction:column;gap:8px}
 .rt-fav:empty{display:none}
 .rt-fav .chip{display:flex;align-items:center;gap:4px;width:100%;background:var(--night-2);
-  border:2px solid var(--alert);border-radius:12px;padding:11px 8px 11px 16px;
-  font-size:20px;font-weight:800;cursor:pointer}
+  border:2px solid var(--alert);border-radius:14px;padding:16px 8px 16px 18px;
+  font-size:26px;font-weight:800;cursor:pointer}
 .rt-fav .chip .t{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;text-align:left}
-.rt-fav .chip small{font-size:14px;font-weight:600;color:var(--dim)}
-.rt-fav .chip .up,.rt-fav .chip .ed,.rt-fav .chip .x{color:var(--dim);font-size:18px;font-weight:600;
-  padding:0 9px;cursor:pointer;flex:none}
+.rt-fav .chip small{font-size:17px;font-weight:600;color:var(--dim)}
+.rt-fav .chip .up,.rt-fav .chip .ed,.rt-fav .chip .x{color:var(--dim);font-size:24px;font-weight:600;
+  padding:6px 13px;cursor:pointer;flex:none}
 .rt-out{flex:1;overflow-y:auto;display:flex;flex-direction:column;gap:6px;
   -webkit-overflow-scrolling:touch}
 .rt-road{background:var(--night-2);border:1px solid var(--rule);border-radius:6px;
@@ -736,8 +736,9 @@ function runPlan(av, bv, meta){
     PLANS.push(s2);
   if(planMeta.fromChip){
     /* 常用路線:有記方案就走該方案,只有一案也直接走;其餘才跳選擇 */
-    const vi = planMeta.via ? PLANS.findIndex(p => mainRoad(p) === planMeta.via)
-                            : (PLANS.length === 1 ? 0 : -1);
+    const vi = planMeta.via
+      ? PLANS.findIndex(p => p.segs.some(s => s.r === planMeta.via && Math.abs(s.to - s.from) > 1))
+      : (PLANS.length === 1 ? 0 : -1);
     if(vi >= 0){ activatePlan(vi); return; }
   }
   showPlan(0);
@@ -1007,6 +1008,7 @@ function startLocate(){
 }
 $('go').onclick = startLocate;
 startLocate();   // 開啟即定位，失敗才顯示啟動畫面
+$('bRoute').onclick();   // 開啟預設先進路線畫面（點常用路線或關閉即回主畫面）
 
 setInterval(() => {
   if(document.visibilityState !== 'visible' || !lastFixTime) return;
